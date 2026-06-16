@@ -41,6 +41,7 @@ Progressive disclosure — the constitution loads on trigger, the detailed arsen
 | Simulation / Agent ladder | [`references/simulation.md`](references/simulation.md) — opponent pools, lookahead/MCTS, stability > cleverness |
 | Code competition / Hackathon | [`references/code-and-hackathon.md`](references/code-and-hackathon.md) — regression guards, rubric-as-metric, the writeup |
 | Tools & treasure troves | [`references/arsenal.md`](references/arsenal.md) — TabPFN, winning-solution repos, NVIDIA Grandmasters Playbook, cuML, W&B |
+| Autonomous / hands-off | [`references/autonomous.md`](references/autonomous.md) — eval-driven loops, parallel agent teams, overnight headless runs — **with guardrails** (protected `BEST_KNOWN`, budget caps, gated submissions). Ships [`scripts/kaggle_eval_loop.sh`](scripts/kaggle_eval_loop.sh) + a [`scripts/nightly-agent.yml`](scripts/nightly-agent.yml) GitHub Actions template |
 
 ## Install
 

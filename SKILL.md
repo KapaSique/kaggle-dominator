@@ -99,8 +99,11 @@ Before coding, classify the competition and open the right file. Don't hold the 
 | **Simulation / Agent** | ladder rating, bot vs bots, episodes | `references/simulation.md` |
 | **Code competition** | you submit an inference notebook, hidden test, runtime limit | `references/code-and-hackathon.md` |
 | **Hackathon (judge-scored)** | judged by humans on a rubric, no LB, writeup needed | `references/code-and-hackathon.md` |
+| **Autonomous / hands-off** | eval-driven loop, agent teams, overnight/headless CI runs | `references/autonomous.md` |
 
 Tools, treasure-trove repos, and communities common to all types (TabPFN API, winning-solutions repos, NVIDIA Grandmasters Playbook, W&B, Meta Kaggle, Discord) live in `references/arsenal.md`. Visit it during RECON.
+
+When the user wants the agent to grind a competition unattended (in a loop, overnight, or as a parallel team), read `references/autonomous.md` — it builds autonomy *on top of* the iron rules (a loop that protects `BEST_KNOWN`, logs every experiment, caps its budget, and never spends the final submission unattended). Ready-made `scripts/kaggle_eval_loop.sh` (headless loop) and `scripts/nightly-agent.yml` (GitHub Actions) ship with the skill.
 
 ---
 
