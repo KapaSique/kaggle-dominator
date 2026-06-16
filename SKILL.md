@@ -122,6 +122,24 @@ When the user wants the agent to grind a competition unattended (in a loop, over
 
 ---
 
+## CAPTURE WHAT YOU LEARN — grow the skill, don't just chat it
+
+Every battle teaches something. If you catch yourself typing *"oh, turns out it's X not Y"* — that's an insight, and saying it only in chat **loses it forever**. Persist it before moving on. This is how the skill compounds: every gold and every failure = +1 proven line.
+
+The discipline (do it the moment a result lands, while it's fresh):
+
+1. **Only persist what's MEASURED.** A number on the real metric, a confirmed mechanism, a debunked assumption — never a hunch (rule 3 still holds). If you can't cite the evidence, it's not an insight yet.
+2. **Classify it:**
+   - **Transferable** (would help in *other* competitions) → append a one-line bullet to `references/grandmaster-playbook.md` under "Battle-proven additions", or to the relevant type file, noting where you proved it.
+   - **Competition-specific** (this comp's `BEST_KNOWN`, what worked/failed *here*, the recipe of a top notebook) → write/update a memory note for that competition.
+3. **Then one line in chat** — not a wall of "turns out…". The persisted record is the deliverable; the chat is the receipt.
+
+Examples: *"rank-average beats mean for AUC"* → playbook (transferable). *"on this comp cdeotte's LR-stacker is the OOF ceiling at 0.970"* → memory (comp-specific). *"reproducing the top notebook verbatim scored, but adapting it into my framework scored BLANK"* → playbook (a transferable lesson learned in one comp).
+
+When running unattended (`references/autonomous.md`), the loop logs insights to the same places — a morning review reads what the agent *learned*, not just what it scored.
+
+---
+
 ## SESSION-START CHECKLIST (answer to yourself before the first action)
 
 1. Competition, **metric (confirm, don't guess** — probe the `sample_submission`/constant score: the number reveals the metric's nature), deadline, submission limit?

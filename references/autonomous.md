@@ -122,3 +122,4 @@ These earn their keep on scale (large migrations, sweeps across many competition
 - **`BEST_KNOWN` is sacred.** The loop may read it; it changes only through the real-metric gate. A regression overnight is worse than no run at all.
 - **Kill switch.** A loop must check a stop flag (file/env) each iteration so you can halt it without hunting the process.
 - **Everything logged.** `results.csv` + per-kernel logs. If you can't reconstruct what the agent did overnight, you can't trust the morning's number.
+- **Insights persisted, not just scores.** When an unattended run discovers something measured (a mechanism, a debunked assumption, a ceiling), it appends it per "CAPTURE WHAT YOU LEARN" in SKILL.md — transferable → `grandmaster-playbook.md`, comp-specific → the competition's memory note. The morning review should read what the agent *learned*, not only the leaderboard delta.

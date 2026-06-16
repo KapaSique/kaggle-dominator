@@ -88,3 +88,14 @@ This is the cross-cutting craft that separates gold from bronze, distilled from 
 8. Post-process to the exact metric (rank-avg AUC, threshold-tune F1 per group).
 9. Two finals = safe (CV) + aggressive; trust CV through the shakeup.
 10. Recon the top, reproduce the baseline, log every experiment, keep a protected best.
+
+---
+
+## Battle-proven additions (grow this)
+
+Append MEASURED, transferable insights here as battles teach them — newest first. Format: `date — [comp type] insight (the evidence)`. Only what's proven by a number/result, never a hunch. This section is the skill learning from its own fights (see "CAPTURE WHAT YOU LEARN" in SKILL.md).
+
+- 2026-06 — [code comp] **Reproduce the top notebook VERBATIM before adapting.** Repeatedly adapting a top public notebook into your own framework scored BLANK or fell back to baseline; a verbatim copy of the best public notebook (wrapped only in a thin serve/fallback layer) was what actually scored. Adapt only *after* the verbatim version is confirmed working.
+- 2026-06 — [blind/no-clean-label comp] **Calibrate a local surrogate on your measured submit→LB points before trusting it.** A pseudo-clean proxy showed Spearman 0.000 vs the real LB across known points — dead proxy. Always verify rank-correlation of any local validation against your handful of real LB points first; if it doesn't correlate, don't optimize against it.
+- 2026-06 — [code comp, runtime-limited] **Over-returning causes TIMEOUT, not a higher score.** Returning far more candidates than the runtime/replay budget fits silently times out (= zero), while a count matched to the budget scores. Size N to the budget, not to the maximum.
+- 2026-06 — [asymmetric-metric comp] **Asymmetric metrics are hypersensitive to a single axis — probe it.** Changing only the confidence of identical predictions moved the LB by ~+70; the metric's FP penalty scaled with confidence. Before modeling, probe how the score responds to one isolated axis (confidence, threshold, calibration).
