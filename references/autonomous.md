@@ -53,16 +53,42 @@ The constitution does the heavy lifting here: each iteration is an *additional* 
 
 ## Level 2 — parallel agent teams
 
-Instead of one agent iterating serially, fan out specialised roles in parallel (the `superpowers:dispatching-parallel-agents` pattern). A good Kaggle team:
+Instead of one agent iterating serially, fan out specialised agents with **isolated context** (the parallel-dispatch pattern). The general rule — *one agent per independent domain, only when there's no shared state* — maps onto Kaggle almost perfectly, because **each independent OOF predictor IS an independent domain**. Parallel agents ↔ parallel kernels ↔ diversity-of-OOF: three layers of the same lever that breaks the flat zone.
 
-| Role | Job |
-|------|-----|
-| **Explorer** | Generate diverse FE / model ideas from discussion + past-season writeups |
-| **Modeler** | Turn each idea into a kernel, push, collect OOF |
-| **Critic** | Hunt leakage, check CV↔LB correlation, reject overfit OOF |
-| **Ensembler** | Hill-Climb the surviving OOF, propose the candidate |
+**What is independent (dispatch in parallel):** each base predictor is its own domain — one agent builds the LightGBM-with-count-encoding OOF, another the CatBoost-with-target-encoding OOF, another the TabPFN bag, another the NN. They never touch each other's work, so they run concurrently.
 
-Each role is a subagent with its own context; the orchestrator collects their outputs and the Critic has veto power before anything reaches the Ensembler. Diversity of *agents* mirrors the diversity-of-OOF principle that breaks the flat zone.
+**What is NOT independent (keep serial — a barrier):** the **ensemble needs ALL OOF at once**, so Hill-Climbing / L2 stacking is a barrier *after* the fan-out, never a parallel peer. Likewise, an L2 model that consumes L1 OOF depends on L1 — sequential, not parallel.
+
+**Two Kaggle-specific contracts the generic pattern doesn't mention:**
+- **Shared fold scheme is a contract, not shared state.** Every agent MUST use the *same* `StratifiedKFold(seed)` and the *same* row order, or their OOF columns don't align and the ensemble is silently corrupt. Pin the seed in the dispatch prompt. (This is the opposite of "agents must not share state" — here they must share the *fold definition* while sharing nothing else.)
+- **Isolate by kernel slug + output file.** Two agents writing to the same kernel slug or the same `oof.npy` collide. Give each its own slug (`<user>/s6e6-lgbm-cnt`, `<user>/s6e6-cat-tgt`, …) and its own output path. That's how you keep them from interfering.
+
+A good team:
+
+| Role | Job | Parallel? |
+|------|-----|-----------|
+| **Explorer** | Mine discussion + past-season writeups for diverse FE / model ideas | yes (by idea) |
+| **Modeler** | Turn one idea into a kernel, push under its own slug, collect OOF | yes (by predictor) |
+| **Critic** | Hunt leakage, verify CV↔LB correlation, reject overfit/misaligned OOF | barrier (gates Modeler output) |
+| **Ensembler** | Hill-Climb the surviving OOF, propose the candidate | barrier (needs all OOF) |
+
+**Dispatch prompt contract** (focused, self-contained, explicit output — same discipline as fixing one test file):
+```
+Scope:   ONE predictor — LightGBM, multiclass, count-encoded categoricals.
+Data:    competition <slug>, target=class, metric=balanced_accuracy.
+Fold:    StratifiedKFold(5, shuffle=True, random_state=42)  ← DO NOT change; OOF must align.
+Goal:    produce oof_lgbm_cnt.npy + test_lgbm_cnt.npy, report OOF balanced-accuracy.
+Constraints: do NOT touch BEST_KNOWN, do NOT submit, use your own kernel slug.
+Return:  one results.csv row + the OOF score. Nothing else.
+```
+
+**Integrate like the generic pattern, plus a leakage spot-check.** When agents return: read each summary, confirm no two used a different fold seed (silent corruptor), let the **Critic veto** anything with suspicious CV↔LB gap before it reaches the Ensembler. Agents make *systematic* errors — a subtly leaked target encoding will look like a great OOF and wreck the LB. Spot-check before trusting.
+
+**Common mistakes (Kaggle flavour):**
+- ❌ "Build a bunch of models" → agent sprawls. ✅ "Build ONE LGBM-count-encoded OOF, 5-fold seed 42."
+- ❌ Each agent picks its own folds → OOF don't align, ensemble is garbage. ✅ Pin the fold scheme in every prompt.
+- ❌ Agents share a slug/output file → collisions. ✅ One slug + one output path per agent.
+- ❌ Ensembler dispatched in parallel with modelers → it has nothing to ensemble yet. ✅ Ensemble is a barrier after the fan-out.
 
 ## Level 3 — headless overnight runs
 
