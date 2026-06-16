@@ -36,6 +36,7 @@ Progressive disclosure — the constitution loads on trigger, the detailed arsen
 
 | Competition type | Arsenal file |
 |---|---|
+| **🏅 Grandmaster playbook (read always)** | [`references/grandmaster-playbook.md`](references/grandmaster-playbook.md) — cross-cutting craft distilled from how real GMs operate (bestfitting, Chris Deotte, Abhishek Thakur, Puget): the CV doctrine, adversarial validation, Hill-Climb ensembling, magic features, the meta-game, post-processing to the metric, shakeup survival. *How the winners think*, not just which technique. |
 | Tabular / Playground | [`references/tabular.md`](references/tabular.md) — OOF factory × Hill Climbing × multi-level stacking × pseudo-labeling × the flat-zone exit |
 | Computer Vision / NLP | [`references/deep-learning.md`](references/deep-learning.md) — backbones, augmentation, TTA, pseudo-labeling, WBF/NMS |
 | Simulation / Agent ladder | [`references/simulation.md`](references/simulation.md) — opponent pools, lookahead/MCTS, stability > cleverness |

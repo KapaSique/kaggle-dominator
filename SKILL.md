@@ -92,6 +92,8 @@ With two daily submissions (typical limit): one for the most aggressive candidat
 
 Before coding, classify the competition and open the right file. Don't hold the whole arsenal in your head — load it on demand.
 
+**Always read `references/grandmaster-playbook.md` on RECON, whatever the type** — it's the cross-cutting craft distilled from how real Grandmasters operate (the CV doctrine, ensembling, feature engineering, meta-game, operating system) that separates gold from bronze. The type tables below tell you *which techniques*; the playbook tells you *how the winners think*.
+
 | Type | Signal | Read |
 |------|--------|------|
 | **Tabular** | CSV, features, Playground Series, classification/regression | `references/tabular.md` |
