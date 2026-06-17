@@ -40,9 +40,34 @@ jobs:
         env:
           KAGGLE_JSON: ${{ secrets.KAGGLE_JSON }}
         run: |
-          mkdir -p ~/.kaggle
-          printf '%s' "$KAGGLE_JSON" > ~/.kaggle/kaggle.json
-          chmod 600 ~/.kaggle/kaggle.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          raw = os.environ["KAGGLE_JSON"].strip()
+          kaggle_dir = Path.home() / ".kaggle"
+          kaggle_dir.mkdir(parents=True, exist_ok=True)
+
+          try:
+              payload = json.loads(raw)
+          except json.JSONDecodeError:
+              payload = {}
+
+          if isinstance(payload, dict) and payload.get("token") and not (
+              payload.get("username") and payload.get("key")
+          ):
+              target = kaggle_dir / "access_token"
+              target.write_text(payload["token"].strip() + "\n")
+          elif raw.startswith("KGAT_"):
+              target = kaggle_dir / "access_token"
+              target.write_text(raw + "\n")
+          else:
+              target = kaggle_dir / "kaggle.json"
+              target.write_text(raw)
+
+          target.chmod(0o600)
+          PY
 
       - name: Run eval-driven loop (headless, no submit)
         env:
