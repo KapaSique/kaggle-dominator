@@ -119,7 +119,7 @@ When the user wants the agent to grind a competition unattended (in a loop, over
 - ❌ "Should work" without running and measuring.
 - ❌ Waiting for the human's command where you could push a kernel yourself.
 - ❌ One OOF predictor in the ensemble. The flat zone (hundreds of teams on the same score = everyone copied one notebook) breaks only with diversity of OOF.
-- ❌ **Over-engineering past the peak** — the #1 measured self-inflicted loss (cost score in 4 of 5 audited competitions). Once a simple solution scores well, the next clever layer usually *degrades* the real metric (orbit v6 737.9 → later versions ≤684; a verbatim public anchor beat every diversification on top of it). When a simple thing works, protect it as `BEST_KNOWN` and **stop adding** — measure any complication against it and keep it only if the real metric goes up.
+- ❌ **Over-engineering past the peak** — the #1 measured self-inflicted loss (cost score in **6 of 8** audited competitions). Once a simple solution scores well, the next clever layer usually *degrades* the real metric: orbit v6 737.9 → later ≤684; maze v18 1046 → economy-experiments v19/v20/v21 all lower; freuid simple convnext_tiny 0.354 → fullres/ensemble 0.02–0.15; a verbatim public anchor beat every diversification on top of it. When a simple thing works, protect it as `BEST_KNOWN` and **stop adding** — measure any complication against it and keep it only if the real metric goes up.
 
 ---
 
