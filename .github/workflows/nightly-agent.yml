@@ -1,0 +1,60 @@
+# nightly-agent.yml — GitHub Actions template: headless Claude Code runs the eval loop nightly.
+#
+# SETUP (you do this once — the agent must never enter secrets itself):
+#   Repo → Settings → Secrets and variables → Actions:
+#     Secrets:   ANTHROPIC_API_KEY   (from console.anthropic.com)
+#                KAGGLE_JSON         (contents of your ~/.kaggle/kaggle.json)
+#     Variables: COMP_SLUG           (e.g. playground-series-s6e6)
+#                TARGET              (e.g. 0.9720)
+#   Then copy this file to .github/workflows/nightly-agent.yml
+#
+# What it does: 02:00 UTC nightly (or manual run), it prepares candidate experiments and
+# commits results.csv / BEST_KNOWN.txt. It does NOT submit — you confirm the candidate.
+name: nightly-kaggle-agent
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC nightly
+  workflow_dispatch: {}    # plus a manual "Run workflow" button
+
+permissions:
+  contents: write          # to commit results back
+
+jobs:
+  grind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90     # budget guard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install CLIs
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          pip install --quiet kaggle
+
+      - name: Configure Kaggle credentials
+        env:
+          KAGGLE_JSON: ${{ secrets.KAGGLE_JSON }}
+        run: |
+          mkdir -p ~/.kaggle
+          printf '%s' "$KAGGLE_JSON" > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+
+      - name: Run eval-driven loop (headless, no submit)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          chmod +x scripts/kaggle_eval_loop.sh
+          ./scripts/kaggle_eval_loop.sh "${{ vars.COMP_SLUG }}" "${{ vars.TARGET }}" 4
+
+      - name: Commit results
+        run: |
+          git config user.name  "nightly-agent"
+          git config user.email "actions@users.noreply.github.com"
+          git add results.csv BEST_KNOWN.txt 2>/dev/null || true
+          git commit -m "nightly: eval-loop results $(date -u +%F)" || echo "no changes"
+          git push || true
