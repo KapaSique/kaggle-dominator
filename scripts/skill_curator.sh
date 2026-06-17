@@ -58,6 +58,10 @@ fi
 
 # Commit only if the curator actually changed something; prefer a PR for human review.
 if [ -n "$(git -C "$SKILL_DIR" status --porcelain 2>/dev/null)" ]; then
+  if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+    echo "[curator] changes left for workflow PR"
+    exit 0
+  fi
   git -C "$SKILL_DIR" add -A
   git -C "$SKILL_DIR" commit -q -m "curator: measured insights $(date -u +%F)" && echo "[curator] committed"
 else

@@ -72,9 +72,15 @@ jobs:
       - name: Run eval-driven loop (headless, no submit)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          COMP_SLUG: ${{ vars.COMP_SLUG }}
+          TARGET: ${{ vars.TARGET }}
         run: |
+          if [ -z "$COMP_SLUG" ]; then
+            echo "COMP_SLUG is not set - skipping nightly eval loop."
+            exit 0
+          fi
           chmod +x scripts/kaggle_eval_loop.sh
-          ./scripts/kaggle_eval_loop.sh "${{ vars.COMP_SLUG }}" "${{ vars.TARGET }}" 4
+          ./scripts/kaggle_eval_loop.sh "$COMP_SLUG" "${TARGET:-1.0}" 4
 
       - name: Commit results
         run: |
