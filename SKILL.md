@@ -102,6 +102,7 @@ Before coding, classify the competition and open the right file. Don't hold the 
 | **Code competition** | you submit an inference notebook, hidden test, runtime limit | `references/code-and-hackathon.md` |
 | **Hackathon (judge-scored)** | judged by humans on a rubric, no LB, writeup needed | `references/code-and-hackathon.md` |
 | **Autonomous / hands-off** | eval-driven loop, agent teams, overnight/headless CI runs | `references/autonomous.md` |
+| **Self-curation** | skill improves itself from measured battles, curator orchestration | `references/self-improvement.md` |
 
 Tools, treasure-trove repos, and communities common to all types (TabPFN API, winning-solutions repos, NVIDIA Grandmasters Playbook, W&B, Meta Kaggle, Discord) live in `references/arsenal.md`. Visit it during RECON.
 
@@ -138,6 +139,8 @@ The discipline (do it the moment a result lands, while it's fresh):
 Examples: *"rank-average beats mean for AUC"* → playbook (transferable). *"on this comp cdeotte's LR-stacker is the OOF ceiling at 0.970"* → memory (comp-specific). *"reproducing the top notebook verbatim scored, but adapting it into my framework scored BLANK"* → playbook (a transferable lesson learned in one comp).
 
 When running unattended (`references/autonomous.md`), the loop logs insights to the same places — a morning review reads what the agent *learned*, not just what it scored.
+
+**And the skill curates *itself*.** A scheduled curator agent (`references/self-improvement.md` + `scripts/skill_curator.sh`) periodically harvests the measured lessons across *all* your battles — especially cross-competition patterns no single session can see (the "over-engineering past the peak = 6/8 comps" anti-pattern only surfaced when an agent audited eight competitions at once) — and proposes them as skill edits for review. This closes the loop: every battle makes the skill permanently sharper, on hard guardrails (only measured, append-only, never rewrites a rule or the description autonomously, consolidates instead of bloating, human merges the PR).
 
 ---
 

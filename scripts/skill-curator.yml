@@ -1,0 +1,76 @@
+# skill-curator.yml — GitHub Actions: the skill curates itself weekly, opens a PR for review.
+#
+# This wires the deepest iceberg level (self-improving loop / agent-built tooling) onto the
+# skill: a scheduled agent harvests MEASURED insights from your battles and proposes skill
+# edits as a PR you merge. It NEVER pushes self-edits straight to main — a human reviews.
+#
+# SETUP (you do this once — the agent never enters secrets itself):
+#   Repo (the skill repo) -> Settings -> Secrets and variables -> Actions:
+#     Secrets:   ANTHROPIC_API_KEY   (console.anthropic.com)
+#                KAGGLE_JSON         (contents of ~/.kaggle/kaggle.json — read-only use)
+#     Variables: COMP_SLUGS          (space-separated active competitions, e.g.
+#                                      "playground-series-s6e6 orbit-wars neurogolf-2026")
+#   Then copy this file to .github/workflows/skill-curator.yml
+#
+# Guardrails live in references/self-improvement.md: only measured facts, append-only to
+# insights, never touch the description, consolidate instead of bloat, validate before commit.
+name: skill-curator
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"    # Mondays 06:00 UTC — weekly harvest
+  workflow_dispatch: {}     # plus a manual "Run workflow" button
+
+permissions:
+  contents: write
+  pull-requests: write       # opens a PR for human review, does not push to main
+
+jobs:
+  curate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install CLIs
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          pip install --quiet kaggle
+
+      - name: Configure Kaggle (read-only)
+        env:
+          KAGGLE_JSON: ${{ secrets.KAGGLE_JSON }}
+        run: |
+          mkdir -p ~/.kaggle
+          printf '%s' "$KAGGLE_JSON" > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+
+      - name: Run curator (harvest measured insights)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          chmod +x scripts/skill_curator.sh
+          # The repo root IS the skill dir here; the curator edits in place.
+          ./scripts/skill_curator.sh . ${{ vars.COMP_SLUGS }} || true
+
+      - name: Open PR if the skill changed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            BR="curator/$(date -u +%F)"
+            git config user.name  "skill-curator"
+            git config user.email "actions@users.noreply.github.com"
+            git checkout -b "$BR"
+            git add -A
+            git commit -m "curator: measured insights $(date -u +%F)"
+            git push origin "$BR"
+            gh pr create --fill --title "Curator: weekly measured insights $(date -u +%F)" \
+              --body "Autonomous harvest of MEASURED battle insights. Review the diff: only Battle-proven additions / anti-pattern counters should change. Merge if the evidence checks out." || true
+          else
+            echo "No change — skill already reflects the battles."
+          fi

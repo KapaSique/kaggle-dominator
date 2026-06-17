@@ -43,6 +43,23 @@ Progressive disclosure — the constitution loads on trigger, the detailed arsen
 | Code competition / Hackathon | [`references/code-and-hackathon.md`](references/code-and-hackathon.md) — regression guards, rubric-as-metric, the writeup |
 | Tools & treasure troves | [`references/arsenal.md`](references/arsenal.md) — TabPFN, winning-solution repos, NVIDIA Grandmasters Playbook, cuML, W&B |
 | Autonomous / hands-off | [`references/autonomous.md`](references/autonomous.md) — eval-driven loops, parallel agent teams, overnight headless runs — **with guardrails** (protected `BEST_KNOWN`, budget caps, gated submissions). Ships [`scripts/kaggle_eval_loop.sh`](scripts/kaggle_eval_loop.sh) + a [`scripts/nightly-agent.yml`](scripts/nightly-agent.yml) GitHub Actions template |
+| 🔁 Self-curating | [`references/self-improvement.md`](references/self-improvement.md) — the skill improves *itself*: a curator agent harvests measured insights across all your battles and proposes skill edits as a PR. Ships [`scripts/skill_curator.sh`](scripts/skill_curator.sh) + [`scripts/skill-curator.yml`](scripts/skill-curator.yml). Discipline-first: only measured facts, append-only, human merges. |
+
+## Battle-tested on 8 real competitions
+
+This isn't theory-ware. The skill was audited against the **actual submission histories** of 8 live competitions (one account, measured on the real leaderboard) — and it learned its sharpest lessons from them:
+
+| Competition | Type | Measured result | The lever |
+|---|---|---|---|
+| Playground S6E6 | tabular | 0.97106 → **0.97183** (rank ~198 → ~91, **top 5%**) | reproduce the *fresh* public best-single verbatim |
+| orbit-wars | RTS simulation | 573 → **737.9** (+165 one step) | exact forward simulator + lookahead rollouts |
+| maze-crawler | ladder | 789 → **1046** | public BFS baseline + time-aware pruning + scout goals |
+| neurogolf | ONNX opt | 6275 → **6287** | honest holdout-validated component selection |
+| neural-debris | unlearning | 259.8 → **329.5** (+70) | a pure `sqrt` confidence transform (no model change) |
+| security (exfil) | code | 6–15 → **18.11** | single-post mass in a *reliable own harness* |
+| s6e5 | tabular (private) | → **0.9546** private | public rank-avg consensus + an honest-CV hedge |
+
+**The biggest lesson it learned about its own user:** *over-engineering past the peak* — adding a clever layer on top of a working simple solution — measurably **cost score in 6 of those 8 competitions**. That anti-pattern is now baked into the skill, with the numbers. Every future battle feeds the [self-curation loop](references/self-improvement.md) and makes it sharper.
 
 ## Install
 
