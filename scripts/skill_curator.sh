@@ -36,7 +36,8 @@ $(cat "$SIGNAL")
 </signal>
 
 Do exactly this:
-1. In the signal, find score JUMPS and DROPS and read the technique from each submission's description.
+0. For EACH competition, FIRST confirm the metric direction: run 'kaggle competitions leaderboard <slug> --show' and look at the top vs bottom score. Higher-at-top = higher-is-better; lower-at-top = lower-is-better. A 'jump' or 'drop' is meaningless — and easy to record backwards — until you know which way the metric runs. NEVER infer direction from a submission description.
+1. In the signal, using the confirmed direction, find score JUMPS and DROPS and read the technique from each submission's description.
 2. For each MEASURED movement NOT already reflected in the playbook, draft ONE transferable bullet:
    'YYYY-MM — [comp type] insight (the evidence with the number)'. Skip anything already present.
 3. Append the survivors to 'Battle-proven additions' (newest first). If a known pattern recurs in a new
@@ -56,14 +57,11 @@ if [ -n "${SKILL_CREATOR_DIR:-}" ] && [ -d "$SKILL_CREATOR_DIR" ]; then
     echo "[curator] VALIDATION FAILED — not committing"; exit 1; }
 fi
 
-# Commit only if the curator actually changed something; prefer a PR for human review.
+# Do NOT commit here — leave edits in the working tree for the caller (CI opens a PR; a human
+# reviews and merges). Committing here too caused a double-commit / branch race in CI.
 if [ -n "$(git -C "$SKILL_DIR" status --porcelain 2>/dev/null)" ]; then
-  if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-    echo "[curator] changes left for workflow PR"
-    exit 0
-  fi
-  git -C "$SKILL_DIR" add -A
-  git -C "$SKILL_DIR" commit -q -m "curator: measured insights $(date -u +%F)" && echo "[curator] committed"
+  echo "[curator] edits staged in the working tree — review the diff, then commit/PR:"
+  git -C "$SKILL_DIR" --no-pager diff --stat
 else
   echo "[curator] no change — skill already reflects the battles"
 fi

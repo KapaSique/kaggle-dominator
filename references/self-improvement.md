@@ -57,6 +57,7 @@ This mirrors the skill's own teaching: parallel where independent (scanners), ba
 An agent rewriting its own brain is the most dangerous thing in this skill. These are not optional:
 
 - **Only measured facts.** A number, an LB movement, a confirmed mechanism. Never a hunch. If there's no evidence, it doesn't get written.
+- **Verify the metric DIRECTION before recording — by the leaderboard, not the submission description.** The first live curator run inverted neurogolf-2026: it assumed "lower=better" from a description and recorded that 6239 beat 6287, when the leaderboard top was 7795 (HIGHER=better) so 6287 was actually the stronger score — the insights were backwards. Before writing any "X beat Y" insight, confirm which way the metric runs by reading the leaderboard top vs bottom. Getting direction wrong silently records the opposite of the truth.
 - **Append-only to insights; never autonomously rewrite or delete existing rules.** The curator may *add* to Battle-proven additions and *increment* an anti-pattern counter. Changing the constitution, the iron rules, or any existing guidance is a **human** decision. Structural edits are out of scope for the loop.
 - **Never touch the `description`.** Triggering is critical and easy to break; the curator leaves frontmatter alone.
 - **Git is the audit trail.** Every self-edit is a separate commit with a readable diff. Prefer a PR over a direct push so a human reviews before merge; at minimum, a human can revert.

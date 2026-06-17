@@ -45,34 +45,9 @@ jobs:
         env:
           KAGGLE_JSON: ${{ secrets.KAGGLE_JSON }}
         run: |
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          raw = os.environ["KAGGLE_JSON"].strip()
-          kaggle_dir = Path.home() / ".kaggle"
-          kaggle_dir.mkdir(parents=True, exist_ok=True)
-
-          try:
-              payload = json.loads(raw)
-          except json.JSONDecodeError:
-              payload = {}
-
-          if isinstance(payload, dict) and payload.get("token") and not (
-              payload.get("username") and payload.get("key")
-          ):
-              target = kaggle_dir / "access_token"
-              target.write_text(payload["token"].strip() + "\n")
-          elif raw.startswith("KGAT_"):
-              target = kaggle_dir / "access_token"
-              target.write_text(raw + "\n")
-          else:
-              target = kaggle_dir / "kaggle.json"
-              target.write_text(raw)
-
-          target.chmod(0o600)
-          PY
+          mkdir -p ~/.kaggle
+          printf '%s' "$KAGGLE_JSON" > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
 
       - name: Run curator (harvest measured insights)
         env:
@@ -87,15 +62,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -n "$(git status --porcelain)" ]; then
-            BR="curator/$(date -u +%F)"
+            # Unique branch per run avoids the "fetch first" rejection on same-day re-runs.
+            BR="curator/$(date -u +%F)-${{ github.run_id }}"
             git config user.name  "skill-curator"
             git config user.email "actions@users.noreply.github.com"
             git checkout -b "$BR"
             git add -A
             git commit -m "curator: measured insights $(date -u +%F)"
-            git push origin "$BR"
-            gh pr create --fill --title "Curator: weekly measured insights $(date -u +%F)" \
-              --body "Autonomous harvest of MEASURED battle insights. Review the diff: only Battle-proven additions / anti-pattern counters should change. Merge if the evidence checks out." || true
+            git push -u origin "$BR"
+            gh pr create --fill --base main --head "$BR" \
+              --title "Curator: measured insights $(date -u +%F)" \
+              --body "Autonomous harvest of MEASURED battle insights. REVIEW THE DIFF before merge: confirm metric direction via the leaderboard, only Battle-proven additions / anti-pattern counters should change. Merge only if the evidence checks out." || true
           else
             echo "No change — skill already reflects the battles."
           fi
