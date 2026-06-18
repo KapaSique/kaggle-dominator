@@ -147,7 +147,7 @@ When running unattended (`references/autonomous.md`), the loop logs insights to 
 
 ## SESSION-START CHECKLIST (answer to yourself before the first action)
 
-1. Competition, **metric (confirm, don't guess** — probe the `sample_submission`/constant score: the number reveals the metric's nature), deadline, submission limit?
+1. Competition, **metric (confirm, don't guess** — probe the `sample_submission`/constant score: the number reveals the metric's nature), deadline, submission limit? **And FIRST: are submissions even ENABLED?** The "deadline" in `kaggle competitions list` is often the competition END / final-scoring date — the *submission* deadline can be earlier, and simulation/agent comps frequently disable submissions before that. Verify you can actually submit (the UI shows "Submissions have been disabled" / a probe submit 400s) BEFORE investing a whole session — don't hunt a front whose window is already closed.
 2. Current `BEST_KNOWN` and its real score?
 3. What do the top public solutions and discussion show?
 4. Does validation correlate with LB?
