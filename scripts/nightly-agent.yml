@@ -73,24 +73,8 @@ jobs:
           if [ -z "$COMP_SLUGS" ]; then
             echo "COMP_SLUGS variable is not set — nothing to monitor."; exit 0
           fi
-          echo "Monitoring fronts: $COMP_SLUGS"
-          claude -p "You are the autonomous nightly Kaggle monitor. Fronts to check (space-separated): $COMP_SLUGS
-
-For EACH front slug, using the Bash tool with \`python3 -m kaggle\`:
-1. \`python3 -m kaggle competitions submissions <slug> --csv | head -6\`  → our latest submissions + REAL publicScore (blank=pending/failed).
-2. \`python3 -m kaggle competitions leaderboard <slug> --show | head -8\`  → top scores; note the gap from our best.
-3. \`python3 -m kaggle competitions list -s <one keyword of the slug>\`  → read the deadline; flag if <7 days away.
-
-Then WRITE a dated digest to STATUS.md (OVERWRITE the file). One section per front with: our best REAL score, our ladder position vs top, deadline + days left, whether submissions look enabled, and ONE concrete recommended next action. Be terse and factual — only numbers you actually read, never invented.
-
-If — and only if — you observe a MEASURED, transferable insight (proven by a real number you just read), append one bullet to the 'Battle-proven additions' section of references/grandmaster-playbook.md. Before claiming any 'X beat Y', confirm the metric DIRECTION from the leaderboard ordering (top row = best). When unsure, do NOT write it.
-
-HARD RULES: Do NOT run any 'kaggle competitions submit' or 'kaggle kernels push' command. Monitoring and writing only. Stay within ~20 Bash calls.
-
-End your reply with: MONITOR_DONE" \
-            --allowedTools "Bash Read Write Edit Grep Glob" \
-            --disallowedTools "WebSearch WebFetch" \
-            || echo "[monitor] claude run had a non-zero exit — committing whatever digest exists"
+          chmod +x scripts/kaggle_monitor.sh
+          ./scripts/kaggle_monitor.sh "$COMP_SLUGS"
 
       - name: Commit digest + any playbook insight
         run: |
