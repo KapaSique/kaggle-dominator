@@ -1,29 +1,30 @@
-# nightly-agent.yml — GitHub Actions template: headless Claude Code runs the eval loop nightly.
+# nightly-agent.yml — headless Claude Code runs a REAL multi-front Kaggle monitor nightly.
 #
-# SETUP (you do this once — the agent must never enter secrets itself):
+# SETUP (you do this once — the agent never enters secrets itself):
 #   Repo → Settings → Secrets and variables → Actions:
 #     Secrets:   ANTHROPIC_API_KEY   (from console.anthropic.com)
-#                KAGGLE_JSON         (contents of your ~/.kaggle/kaggle.json)
-#     Variables: COMP_SLUG           (e.g. playground-series-s6e6)
-#                TARGET              (e.g. 0.9720)
-#   Then copy this file to .github/workflows/nightly-agent.yml
+#                KAGGLE_JSON         (contents of your ~/.kaggle/kaggle.json, OR a KGAT_ access token)
+#     Variables: COMP_SLUGS          (space-separated fronts, e.g. "playground-series-s6e6 orbit-wars ...")
 #
-# What it does: 02:00 UTC nightly (or manual run), it prepares candidate experiments and
-# commits results.csv / BEST_KNOWN.txt. It does NOT submit — you confirm the candidate.
+# What it does each night: for EVERY front in COMP_SLUGS it reads the REAL Kaggle state
+# (submission scores, ladder rank, deadline, submissions-enabled) via the API, writes a dated
+# digest to STATUS.md, and appends any MEASURED transferable insight to the playbook.
+# It NEVER submits — monitoring + curation only. Cloud-CI cannot see your local comp folders;
+# real agent grinding of local work requires a self-hosted runner (see scripts/SELF_HOSTED.md).
 name: nightly-kaggle-agent
 
 on:
   schedule:
-    - cron: "0 2 * * *"   # 02:00 UTC nightly
-  workflow_dispatch: {}    # plus a manual "Run workflow" button
+    - cron: "23 2 * * *"    # 02:23 UTC nightly (off the :00 stampede)
+  workflow_dispatch: {}      # plus a manual "Run workflow" button
 
 permissions:
-  contents: write          # to commit results back
+  contents: write            # to commit STATUS.md + playbook back
 
 jobs:
-  grind:
+  monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 90     # budget guard
+    timeout-minutes: 30      # budget guard — monitoring is cheap
     steps:
       - uses: actions/checkout@v4
 
@@ -41,51 +42,60 @@ jobs:
           KAGGLE_JSON: ${{ secrets.KAGGLE_JSON }}
         run: |
           python - <<'PY'
-          import json
-          import os
+          import json, os
           from pathlib import Path
-
           raw = os.environ["KAGGLE_JSON"].strip()
-          kaggle_dir = Path.home() / ".kaggle"
-          kaggle_dir.mkdir(parents=True, exist_ok=True)
-
+          kdir = Path.home() / ".kaggle"; kdir.mkdir(parents=True, exist_ok=True)
           try:
               payload = json.loads(raw)
           except json.JSONDecodeError:
               payload = {}
-
-          if isinstance(payload, dict) and payload.get("token") and not (
-              payload.get("username") and payload.get("key")
-          ):
-              target = kaggle_dir / "access_token"
-              target.write_text(payload["token"].strip() + "\n")
+          if isinstance(payload, dict) and payload.get("token") and not (payload.get("username") and payload.get("key")):
+              t = kdir / "access_token"; t.write_text(payload["token"].strip() + "\n")
           elif raw.startswith("KGAT_"):
-              target = kaggle_dir / "access_token"
-              target.write_text(raw + "\n")
+              t = kdir / "access_token"; t.write_text(raw + "\n")
           else:
-              target = kaggle_dir / "kaggle.json"
-              target.write_text(raw)
-
-          target.chmod(0o600)
+              t = kdir / "kaggle.json"; t.write_text(raw)
+          t.chmod(0o600)
+          print("kaggle creds written:", t.name)
           PY
 
-      - name: Run eval-driven loop (headless, no submit)
+      - name: Sanity — Kaggle API reachable
+        run: |
+          python3 -m kaggle competitions list -s playground 2>&1 | head -3 || \
+            echo "WARNING: kaggle API check failed (token may be expired)"
+
+      - name: Run multi-front monitor (headless, NO submit)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          COMP_SLUG: ${{ vars.COMP_SLUG }}
-          TARGET: ${{ vars.TARGET }}
+          COMP_SLUGS: ${{ vars.COMP_SLUGS }}
         run: |
-          if [ -z "$COMP_SLUG" ]; then
-            echo "COMP_SLUG is not set - skipping nightly eval loop."
-            exit 0
+          if [ -z "$COMP_SLUGS" ]; then
+            echo "COMP_SLUGS variable is not set — nothing to monitor."; exit 0
           fi
-          chmod +x scripts/kaggle_eval_loop.sh
-          ./scripts/kaggle_eval_loop.sh "$COMP_SLUG" "${TARGET:-1.0}" 4
+          echo "Monitoring fronts: $COMP_SLUGS"
+          claude -p "You are the autonomous nightly Kaggle monitor. Fronts to check (space-separated): $COMP_SLUGS
 
-      - name: Commit results
+For EACH front slug, using the Bash tool with \`python3 -m kaggle\`:
+1. \`python3 -m kaggle competitions submissions <slug> --csv | head -6\`  → our latest submissions + REAL publicScore (blank=pending/failed).
+2. \`python3 -m kaggle competitions leaderboard <slug> --show | head -8\`  → top scores; note the gap from our best.
+3. \`python3 -m kaggle competitions list -s <one keyword of the slug>\`  → read the deadline; flag if <7 days away.
+
+Then WRITE a dated digest to STATUS.md (OVERWRITE the file). One section per front with: our best REAL score, our ladder position vs top, deadline + days left, whether submissions look enabled, and ONE concrete recommended next action. Be terse and factual — only numbers you actually read, never invented.
+
+If — and only if — you observe a MEASURED, transferable insight (proven by a real number you just read), append one bullet to the 'Battle-proven additions' section of references/grandmaster-playbook.md. Before claiming any 'X beat Y', confirm the metric DIRECTION from the leaderboard ordering (top row = best). When unsure, do NOT write it.
+
+HARD RULES: Do NOT run any 'kaggle competitions submit' or 'kaggle kernels push' command. Monitoring and writing only. Stay within ~20 Bash calls.
+
+End your reply with: MONITOR_DONE" \
+            --allowedTools "Bash Read Write Edit Grep Glob" \
+            --disallowedTools "WebSearch WebFetch" \
+            || echo "[monitor] claude run had a non-zero exit — committing whatever digest exists"
+
+      - name: Commit digest + any playbook insight
         run: |
-          git config user.name  "nightly-agent"
+          git config user.name  "nightly-monitor"
           git config user.email "actions@users.noreply.github.com"
-          git add results.csv BEST_KNOWN.txt 2>/dev/null || true
-          git commit -m "nightly: eval-loop results $(date -u +%F)" || echo "no changes"
-          git push || true
+          git add STATUS.md references/grandmaster-playbook.md 2>/dev/null || true
+          git commit -m "nightly monitor: front digest $(date -u +%F)" || echo "no changes to commit"
+          git push || echo "push failed (non-fatal)"
