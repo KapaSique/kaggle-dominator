@@ -57,22 +57,35 @@ jobs:
           # The repo root IS the skill dir here; the curator edits in place.
           ./scripts/skill_curator.sh . ${{ vars.COMP_SLUGS }} || true
 
-      - name: Open PR if the skill changed
+      - name: Open PR + verified auto-merge (agents-managing-agents)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            # Unique branch per run avoids the "fetch first" rejection on same-day re-runs.
-            BR="curator/$(date -u +%F)-${{ github.run_id }}"
-            git config user.name  "skill-curator"
-            git config user.email "actions@users.noreply.github.com"
-            git checkout -b "$BR"
-            git add -A
-            git commit -m "curator: measured insights $(date -u +%F)"
-            git push -u origin "$BR"
-            gh pr create --fill --base main --head "$BR" \
-              --title "Curator: measured insights $(date -u +%F)" \
-              --body "Autonomous harvest of MEASURED battle insights. REVIEW THE DIFF before merge: confirm metric direction via the leaderboard, only Battle-proven additions / anti-pattern counters should change. Merge only if the evidence checks out." || true
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No change — skill already reflects the battles."; exit 0
+          fi
+          # Unique branch per run avoids the "fetch first" rejection on same-day re-runs.
+          BR="curator/$(date -u +%F)-${{ github.run_id }}"
+          git config user.name  "skill-curator"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout -b "$BR"
+          git add -A
+          git commit -m "curator: measured insights $(date -u +%F)"
+          git push -u origin "$BR"
+          gh pr create --fill --base main --head "$BR" \
+            --title "Curator: measured insights $(date -u +%F)" \
+            --body "Autonomous harvest of MEASURED battle insights. An independent verifier gates auto-merge; if it could not confirm the evidence this PR is left open with the needs-human label." || true
+
+          # Independent fresh-context verifier decides auto-merge vs human review.
+          chmod +x scripts/curator_verify.sh
+          VOUT=$(./scripts/curator_verify.sh || true)
+          echo "$VOUT"
+          if echo "$VOUT" | grep -q "GUARD=PASS"; then
+            git fetch origin main
+            gh pr merge "$BR" --squash --delete-branch && echo "AUTO-MERGED: verifier passed guardrails."
           else
-            echo "No change — skill already reflects the battles."
+            gh pr edit "$BR" --add-label "needs-human" 2>/dev/null || \
+              gh pr comment "$BR" --body "Verifier did NOT confirm guardrails — human review required before merge." || true
+            echo "LEFT FOR HUMAN: verifier flagged the change."
           fi
