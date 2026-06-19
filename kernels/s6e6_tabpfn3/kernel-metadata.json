@@ -1,0 +1,16 @@
+{
+  "id": "ssstelmah/s6e6-tpfn3v2",
+  "title": "s6e6 tpfn3v2",
+  "code_file": "tpfn3_oof.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [
+    "playground-series-s6e6"
+  ],
+  "model_sources": [],
+  "kernel_sources": []
+}

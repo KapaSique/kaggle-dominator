@@ -1,0 +1,51 @@
+# s6e6-tabpfn3.yml — cloud daily launch of the TabPFN-3 kernel until GPU quota lets it land.
+# The kernel (kernels/s6e6_tabpfn3/) is self-contained: weights pull at runtime via kagglehub,
+# no dataset/model sources. Idempotent: skips if already running/complete. Pure Kaggle API —
+# runs even when the Mac/app is closed. INTEGRATION (stacking the OOF + submitting only if
+# >0.97183) stays with the Claude cron 2c5d7169, which has the local base-OOF pool.
+# REMOVE after TabPFN-3 has landed and been integrated, or after the 06-30 deadline.
+name: s6e6-tabpfn3-launch
+
+on:
+  schedule:
+    - cron: "29 9 * * *"    # daily 09:29 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Configure Kaggle credentials
+        env:
+          KAGGLE_JSON: ${{ secrets.KAGGLE_JSON }}
+        run: |
+          mkdir -p ~/.kaggle
+          printf '%s' "$KAGGLE_JSON" > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+          pip install --quiet kaggle
+
+      - name: Launch TabPFN-3 if not already running/complete
+        run: |
+          ST=$(python3 -m kaggle kernels status ssstelmah/s6e6-tpfn3v2 2>&1 || true)
+          echo "current status: $ST"
+          if echo "$ST" | grep -qiE "complete|running|queued"; then
+            echo "== kernel already running/complete -> skip push =="
+            exit 0
+          fi
+          echo "== pushing TabPFN-3 (s6e6-tpfn3v2) =="
+          OUT=$(python3 -m kaggle kernels push -p kernels/s6e6_tabpfn3 2>&1 || true)
+          echo "$OUT"
+          if echo "$OUT" | grep -qi "quota\|maximum"; then
+            echo "== GPU quota not free yet -> retry tomorrow =="
+          fi
+          echo "done $(date -u)"
