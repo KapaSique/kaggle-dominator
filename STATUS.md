@@ -1,37 +1,37 @@
-# Kaggle Monitor — nightly digest 2026-06-19
+# Kaggle Monitor — nightly digest (2026-06-19)
 
-All metrics higher = better (confirmed: leaderboard top row = best score). Pareto rebuilt tonight from fresh scored submissions only (pending/blank skipped).
-
----
+Metric direction confirmed per front from leaderboard ordering (top row = best ⇒ higher = better on all four). Pareto rebuilt tonight from fresh scored submissions only (pending/blank skipped).
 
 ## playground-series-s6e6
-- **Our best REAL score:** 0.97183 (`cand_A_anchor`, raw public best-single, COMPLETE).
-- **Ladder vs top:** top = 0.97283 (yuki #2). Gap = **0.00100**. We sit below the visible top-5 (5th shown 0.97233) — outside top 5.
-- **Deadline:** 2026-06-30 — **11 days left**.
-- **Submissions enabled:** yes (recent subs all COMPLETE).
-- **Pareto:** 1/5 on front. Front = `anchor` (0.97183). DOMINATED/over-engineered: softvote 0.97165, cand_C_override 0.97159, consensus 0.97148, TabPFN3_standalone 0.97061. Tool says **HOLD anchor** (sole front member; every blend OF the anchor scored below it).
-- **Next action:** Don't submit any blend that doesn't beat 0.97183 on CV first. To climb the 0.001 gap you need a richer BASE (fresh public SOTA / GPU rebuild), not more blending of the existing pool.
+- **Our best REAL:** 0.97183 (`cand_A_anchor` — public best-single, submitted verbatim).
+- **Ladder:** top = 0.97283 (yuki #2); top-5 down to 0.97233. Our 0.97183 sits ~0.00050 below 5th, ~0.00100 below #1.
+- **Deadline:** s6e6 NOT shown in `competitions list` output (only s6e1–s6e4 listed). Playground monthly cadence implies ~2026-06-30 (~11 days) — NOT directly read, treat as unconfirmed.
+- **Submissions enabled:** yes — latest COMPLETE 2026-06-16.
+- **PARETO (10 scored versions):** front = {anchor 0.97183} alone; all 9 blends/stackers DOMINATED (softvote 0.97165, override_wide 0.97159, consensus 0.97148, cdeotte_LR 0.97101, mega_stack 0.97085, hillclimb 0.97073, TabPFN3_standalone 0.97061, enriched 0.96941, 2level 0.96934). Tool: **HOLD** anchor (sole front member). Blending decorrelated-but-weaker signals into it net-hurt.
+- **Next action:** stop blending the existing public pool; passing the 0.972 cluster needs a richer BASE (GPU rebuild / fresh public-SOTA recon), not more votes over the same anchor.
 
 ## orbit-wars
-- **Our best REAL score:** 684.1 (`v8_Tempo`, COMPLETE).
-- **Ladder vs top:** top = 1723.9 (Jake Will). Gap ≈ **1040**; 5th visible 1601.5 — far below the top cluster.
-- **Deadline:** 2026-06-23 — **4 days left ⚠️ UNDER 7 DAYS**.
-- **Submissions enabled:** yes (latest v6 re-submit COMPLETE 2026-06-18).
-- **Pareto:** 1/5 on front. Front = `v8_Tempo` (684.1). DOMINATED: v7b 663.6, v11_Horizon 643.6, v9_Diplomat 636.4, v6_Oracle_resubmit 596.1. Tool says **HOLD v8_Tempo**. Note: tonight's v6 re-submit (claimed "proven peak 737.9 local") scored only **596.1** on the ladder — local mirror score did not transfer.
-- **Next action:** 4 days out — lock/confirm v8 (the real measured peak); stop over-engineering. If burning a slot, re-run v8 to verify placement given ladder score noise, not a new variant.
+- **Our best REAL:** 737.9 (`v6_Oracle`) — but **non-reproducible**: re-submitting identical v6 scored 585.9 (−152). Active/defended version is `v8_Tempo` 684.1 (also re-scored 655.8 on resubmit). Ladder is high-variance.
+- **Ladder:** top = 1720.0 (Isaiah @ Tufa Labs); top-5 1599–1720. Our best ~737.9 is ~982 below #1 — far down.
+- **Deadline:** 2026-06-23 23:59 → **4 DAYS LEFT — FLAG (<7).**
+- **Submissions enabled:** yes — latest COMPLETE 2026-06-19.
+- **PARETO (7 versions):** front = {v6_Oracle 737.9}; v8 684.1, v7b 663.6, v11 643.6, v9 636.4, v5 573.0, v1 542.7 DOMINATED. Tool: **REPLACE v8_Tempo → v6_Oracle.** CAVEAT: this is the single-submission-fluke trap — v6 only reproduced 585.9, so 737.9 is NOT a real ceiling; do not chase it on faith.
+- **Next action:** with 4 days left and a ~1000-pt gap to the top, don't burn remaining slots reverting to the noisy 737.9. Re-submit v8_Tempo (and/or v6) 2–3× to estimate the true mean, then lock the higher-mean version for final scoring.
 
 ## neurogolf-2026
-- **Our best REAL score:** 6507.21 (`kojimar_6507_base`, fresh public RECON base, COMPLETE 2026-06-19).
-- **Ladder vs top:** top = 7843.05 (neurogolf team). Gap ≈ **1336**; 5th visible 7687.71.
-- **Deadline:** 2026-07-15 — **26 days left**.
-- **Submissions enabled:** yes.
-- **Pareto:** 1/5 on front. Front = `kojimar_6507_base` (6507.21). DOMINATED: v5 6287.25, v4 6281.20, v6_MEGA 6241.54, v7_overlay 6239.36 — our own MEGA/overlay engineering scored BELOW even simple v5. Tool says **HOLD kojimar base** (+220 over prior best v5).
-- **Next action:** Build holdout-validated conv-fit overlays ON TOP of the new 6507 base (not the stale 6372 base). The over-engineered overlays that lost ~220 were built on a weaker base.
+- **Our best REAL:** 6507.21 (`kojimar_audited` base — grader-verified local 6507.21 exact).
+- **Ladder:** top = 7843.05 (neurogolf team); top-5 7687–7843. Our 6507.21 is ~1336 below #1.
+- **Deadline:** 2026-07-15 23:59 → ~26 days.
+- **Submissions enabled:** yes — latest COMPLETE 2026-06-19.
+- **PARETO (8 versions):** front = {kojimar_audited 6507.21}; v5 6287.25, v4 6281.20, v2 6275.70, baseline_kojimar 6275.09, v6_MEGA 6241.54, v7_overlay 6239.36, v3 6102.00 DOMINATED — the heavier multisource overlays (v6/v7) scored BELOW the simpler audited base. Tool: **HOLD** kojimar_audited.
+- **Next action:** protect the 6507.21 base; gap to top is large, so pursue a stronger public base / new arch rather than more conv-fit overlays (which dominate-down).
 
 ## ai-agent-security-multi-step-tool-attacks
-- **Our best REAL score:** 45.000 (`v14_guide24_N=500`, COMPLETE). v15 N=530/550/570 are PENDING (no score yet).
-- **Ladder vs top:** top = 90.000 (Kohei). Gap = **45.0** (we're at exactly half); 5th visible 61.81.
-- **Deadline:** 2026-09-01 — **74 days left**.
-- **Submissions enabled:** yes (subs flowing; several PENDING tonight).
-- **Pareto:** 3 scored versions → 1/3 on front. Front = `v14_N=500` (45.000). DOMINATED: v14_N=420 37.800, v11safe_N=350 30.530. Tool says **HOLD v14_N=500**. The live lever is N: 350→30.53, 420→37.8, 500→45.0, 580→blank (timeout) — score climbs with N up to a cliff.
-- **Next action:** Wait for tonight's PENDING v15 N=530/550/570 to score, then pick the highest N that still scores (below the ~580 timeout cliff) as the new best — don't push N past where it blanks.
+- **Our best REAL:** 45.000 (`v14` guide24 N=500). Several N=530/550/570 (v15) probes still PENDING.
+- **Ladder:** top = 90.000 (Kohei), 89.910, 82.300, 77.65, 66.645. Our 45.0 is exactly half the top, below 5th (66.645).
+- **Deadline:** 2026-09-01 23:59 → ~74 days.
+- **Submissions enabled:** yes — submissions accepted 2026-06-19 (pending).
+- **PARETO (3 scored versions):** front = {v14_N500 45.0}; v14_N420 37.8, v11_N350 30.53 DOMINATED — score rises with N up to the cliff. Tool: **HOLD** v14_N500.
+- **Next action:** wait on the pending v15 N=530/550/570 results to map the cliff above N=500; if they don't beat 45.0, the lever is recipe quality (top is at 90), not more N.
+
+MONITOR_DONE
