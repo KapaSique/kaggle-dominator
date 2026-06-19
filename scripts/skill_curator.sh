@@ -38,10 +38,14 @@ $(cat "$SIGNAL")
 Do exactly this:
 0. For EACH competition, FIRST confirm the metric direction: run 'kaggle competitions leaderboard <slug> --show' and look at the top vs bottom score. Higher-at-top = higher-is-better; lower-at-top = lower-is-better. A 'jump' or 'drop' is meaningless — and easy to record backwards — until you know which way the metric runs. NEVER infer direction from a submission description.
 1. In the signal, using the confirmed direction, find score JUMPS and DROPS and read the technique from each submission's description.
+1.5 GEPA-REFLECTION (borrowed from gepa-ai/gepa): for each significant movement do NOT just log the number — diagnose WHY from the full available trace: the version-to-version description chain, what single thing changed, leaderboard context, blank/timeout vs scored. A diagnosed CAUSE ('N=580 blank = replay-overrun past the 500-580 harness ceiling') is worth far more than a bare delta and is what makes a lesson transferable. Reading full traces, not a scalar score, is the whole point.
 2. For each MEASURED movement NOT already reflected in the playbook, draft ONE transferable bullet:
    'YYYY-MM — [comp type] insight (the evidence with the number)'. Skip anything already present.
-3. Append the survivors to 'Battle-proven additions' (newest first). If a known pattern recurs in a new
-   comp (e.g. over-engineering past the peak), increment its counter in SKILL.md (e.g. 6/8 -> 7/9).
+3. PROMOTE-THRESHOLD (borrowed from harness-evolver promote_learnings.py): append a bullet to durable
+   'Battle-proven additions' only if the insight is confirmed by >=2 independent measurements OR is a
+   single CLEAN decisive result; tag a one-off noisy move '(unconfirmed, 1x)' rather than enshrining it
+   as doctrine. If a known pattern recurs in a new comp (e.g. over-engineering past the peak), increment
+   its counter in SKILL.md (e.g. 6/8 -> 7/9) — that recurrence IS the threshold being met.
 4. HARD RULES: only measured facts; do NOT rewrite or delete existing rules; do NOT touch the YAML
    description; if 'Battle-proven additions' exceeds ~25 bullets, CONSOLIDATE several specific ones into
    one general measured principle instead of adding more.
