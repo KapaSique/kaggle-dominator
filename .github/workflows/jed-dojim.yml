@@ -26,10 +26,25 @@ jobs:
         env:
           KAGGLE_JSON: ${{ secrets.KAGGLE_JSON }}
         run: |
-          mkdir -p ~/.kaggle
-          printf '%s' "$KAGGLE_JSON" > ~/.kaggle/kaggle.json
-          chmod 600 ~/.kaggle/kaggle.json
           pip install --quiet kaggle
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          raw = os.environ["KAGGLE_JSON"].strip()
+          kdir = Path.home() / ".kaggle"; kdir.mkdir(parents=True, exist_ok=True)
+          try:
+              payload = json.loads(raw)
+          except json.JSONDecodeError:
+              payload = {}
+          if isinstance(payload, dict) and payload.get("token") and not (payload.get("username") and payload.get("key")):
+              t = kdir / "access_token"; t.write_text(payload["token"].strip() + "\n")
+          elif raw.startswith("KGAT_"):
+              t = kdir / "access_token"; t.write_text(raw + "\n")
+          else:
+              t = kdir / "kaggle.json"; t.write_text(raw)
+          t.chmod(0o600)
+          print("kaggle creds written:", t.name)
+          PY
 
       - name: Submit jed-n550/n570 if not already in history
         run: |
