@@ -1,0 +1,53 @@
+# jed-dojim.yml — cloud JED N-ladder dojim. Submits the ready kernels jed-n550/n570
+# when the rolling-24h quota allows. Idempotent: skips an N already in submission history,
+# stops on quota/error (never spams failed retries — they burn the window). Pure Kaggle API,
+# no local files, no Claude — so it runs even when the Mac/app is closed.
+# REMOVE after the N-ladder is exhausted or after the competition deadline.
+name: jed-dojim
+
+on:
+  schedule:
+    - cron: "37 8 * * *"    # daily 08:37 UTC (after the 07:35 quota-window edge)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  dojim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Configure Kaggle credentials
+        env:
+          KAGGLE_JSON: ${{ secrets.KAGGLE_JSON }}
+        run: |
+          mkdir -p ~/.kaggle
+          printf '%s' "$KAGGLE_JSON" > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+          pip install --quiet kaggle
+
+      - name: Submit jed-n550/n570 if not already in history
+        run: |
+          SLUG=ai-agent-security-multi-step-tool-attacks
+          SUBS=$(python3 -m kaggle competitions submissions "$SLUG" --csv 2>/dev/null || true)
+          echo "current submissions head:"; echo "$SUBS" | head -4
+          for N in 550 570; do
+            if echo "$SUBS" | grep -q "N=$N"; then
+              echo "== N=$N already in history -> skip =="
+              continue
+            fi
+            echo "== submitting jed-n$N =="
+            OUT=$(python3 -m kaggle competitions submit "$SLUG" -k ssstelmah/jed-n$N -v 1 -f submission.csv \
+                  -m "v15 N=$N cloud-dojim toward cliff (500=45, 580=blank); BEST_KNOWN=45" 2>&1 || true)
+            echo "$OUT"
+            if echo "$OUT" | grep -qiE "quota|maximum|400|error|not found"; then
+              echo "== quota/error -> stop (do not burn the rolling-24h window) =="
+              break
+            fi
+          done
+          echo "done $(date -u)"
