@@ -7,8 +7,12 @@
 name: s6e6-tabpfn3-launch
 
 on:
-  schedule:
-    - cron: "29 9 * * *"    # daily 09:29 UTC
+  # schedule DISABLED — kernels push needs a classic Kaggle API key (username+key) in
+  # KAGGLE_JSON; this account uses OAuth login (token-only), which can `submit` but not `push`.
+  # Putting the full OAuth bundle (with refresh_token) in the secret would work but is a
+  # standing-risk credential in the cloud. S6E6 push is covered locally by claude-cron 2c5d7169
+  # + launchd com.kaggle.grind (full local creds). Re-enable this schedule only if a classic
+  # username+key token lands in the secret.
   workflow_dispatch: {}
 
 permissions:
