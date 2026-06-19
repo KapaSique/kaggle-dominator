@@ -1,0 +1,28 @@
+# keep-warm.yml — pings the Triagegeist "Second Look" HF Space every 6h so it never
+# sleeps during judging. HF free-tier Spaces sleep after ~48h of no traffic; a judge
+# opening a sleeping demo sees a ~40s cold start (bad first impression on a $10k rubric).
+# REMOVE this workflow after the deadline (2026-06-21 22:00 UTC) — it is temporary.
+name: keep-warm-triagegeist
+
+on:
+  schedule:
+    - cron: "13 */6 * * *"   # every 6 hours at :13 (off the :00 stampede)
+  workflow_dispatch: {}       # manual "Run workflow" button
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Wake the HF Space
+        run: |
+          for url in \
+            "https://kapasique-second-look-triage.hf.space/" \
+            "https://huggingface.co/spaces/KapaSique/second-look-triage"; do
+            printf '%s -> ' "$url"
+            curl -s -o /dev/null -w "%{http_code}\n" --max-time 90 "$url" || echo "fail"
+          done
+          echo "pinged at $(date -u)"
