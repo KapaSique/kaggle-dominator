@@ -1,0 +1,69 @@
+# re-recon.yml — every-3-days re-RECON sweep (playbook rule 7: stale-base trap).
+# Scans each front for a fresh PUBLIC base that beats our best (the lever that gave neurogolf +606).
+# Cloud, 24/7 — independent of the Mac/app. NO submit; flags reproduce-upside in STATUS_RERECON.md.
+name: re-recon
+
+on:
+  schedule:
+    - cron: "13 9 */3 * *"   # every 3rd day, 09:13 UTC (off the :00 stampede)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  recon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install CLIs
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          pip install --quiet kaggle
+
+      - name: Configure Kaggle credentials
+        env:
+          KAGGLE_JSON: ${{ secrets.KAGGLE_JSON }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          raw = os.environ["KAGGLE_JSON"].strip()
+          kdir = Path.home() / ".kaggle"; kdir.mkdir(parents=True, exist_ok=True)
+          try:
+              payload = json.loads(raw)
+          except json.JSONDecodeError:
+              payload = {}
+          if isinstance(payload, dict) and payload.get("token") and not (payload.get("username") and payload.get("key")):
+              t = kdir / "access_token"; t.write_text(payload["token"].strip() + "\n")
+          elif raw.startswith("KGAT_"):
+              t = kdir / "access_token"; t.write_text(raw + "\n")
+          else:
+              t = kdir / "kaggle.json"; t.write_text(raw)
+          t.chmod(0o600)
+          PY
+
+      - name: Run re-RECON sweep (NO submit)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          COMP_SLUGS: ${{ vars.COMP_SLUGS }}
+        run: |
+          if [ -z "$COMP_SLUGS" ]; then
+            echo "COMP_SLUGS not set — nothing to re-recon."; exit 0
+          fi
+          chmod +x scripts/re_recon.sh
+          ./scripts/re_recon.sh "$COMP_SLUGS pokemon-tcg-ai-battle"
+
+      - name: Commit re-recon digest
+        run: |
+          git config user.name  "re-recon"
+          git config user.email "actions@users.noreply.github.com"
+          git add STATUS_RERECON.md 2>/dev/null || true
+          git commit -m "re-recon sweep $(date -u +%F)" || echo "no change"
+          git push || echo "push failed (non-fatal)"
