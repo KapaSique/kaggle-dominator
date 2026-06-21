@@ -91,6 +91,22 @@ This is the cross-cutting craft that separates gold from bronze, distilled from 
 
 ---
 
+## Operational rules (session-measured 2026-06)
+
+Hard-won from a long multi-front session — recurring failure patterns that cost real time before they had a rule. This is the OPERATIONAL layer (how to run kernels/ladders/parallel sessions), distinct from competition tactics above.
+
+1. **Slug-poison (code-comp kernel push).** A failed `kernels push` poisons the slug PERMANENTLY ("Notebook not found" forever). ALWAYS push under a FRESH slug with an incrementing suffix (v5→v6→…); never retry the same slug. Cost this session: ~8 wasted retries across S6E6/JED before the rule was explicit.
+
+2. **Ladder-drift ±200 (TrueSkill / agent comps).** Agent-ladder ratings DRIFT heavily over time: pokemon v3 526→792 and anchor 580→685; orbit v8 684→631. "Ladder = truth" still holds, but ONE snapshot is NOT truth — use several readings / a trend, never retire an agent on a single low reading (we nearly killed pokemon-v3 at 526; it rose to 792). Sharpens the "local arena lies" rule: even the real ladder needs a settled reading.
+
+3. **Kernel-path glob-fallback.** Kaggle mount layout varies — NEVER hardcode `/kaggle/input/...` (COMP_DIR, model dir, GGUF). Always glob-fallback: try both layouts + a marker file (e.g. `scoring.py`). `pip install --no-deps` (kept to preserve the GPU-matched torch) skips runtime deps → MANUALLY install the ones it imports, OR mock a missing internal module no-op (e.g. `tabpfn_common_utils.telemetry`, not on PyPI).
+
+4. **Check-active BEFORE work.** BEST_KNOWN drifts under you (a cron, a parallel session, ladder recalibration) — ALWAYS read the current active submission + `SUBMIT_QUEUE.md` BEFORE building. This session a 2-task neurogolf merge (6508.05) was wasted because the autonomous rebuilder had already shipped 6508.55. One `submissions --csv | head` saves an hour.
+
+5. **GPU-slot management.** Kaggle caps PARALLEL GPU sessions at 2 ("Maximum batch GPU session count of 2 reached"). A `enable_gpu=false` (CPU) push updates kernel CODE without consuming a slot; switch the real run to GPU in the UI. CLI `enable_gpu=true` gives P100 (compute 6.0) — many libs (TabPFN) need T4+ (sm_7.5) → choose "GPU T4 x2" in the UI, not via CLI.
+
+6. **Cross-session coordination.** Parallel sessions/crons grind the SAME fronts — check submissions + `SUBMIT_QUEUE.md` before a build to avoid duplicating finished work (happened twice this session: neurogolf merge already done, JED eval already RUNNING). The autonomous layer means your "new" idea may already be shipped.
+
 ## Deep-agent self-improvement mechanisms (borrowed 2026-06)
 
 Distilled from the deepest public autonomy projects — EvoSkill (`sentient-agi/EvoSkill`), GEPA (`gepa-ai/gepa`, ICLR 2026 Oral), harness-evolver (`raphaelchristi/harness-evolver`), A-EVO-Lab — and wired into this skill. These are HOW the self-improving loop runs, not competition tactics. See [[deep-agent-orchestration-refs]].
