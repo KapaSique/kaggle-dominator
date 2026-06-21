@@ -107,6 +107,8 @@ Hard-won from a long multi-front session — recurring failure patterns that cos
 
 6. **Cross-session coordination.** Parallel sessions/crons grind the SAME fronts — check submissions + `SUBMIT_QUEUE.md` before a build to avoid duplicating finished work (happened twice this session: neurogolf merge already done, JED eval already RUNNING). The autonomous layer means your "new" idea may already be shipped.
 
+7. **★ Stale-base trap — re-RECON public REGULARLY (highest-ROI lever measured).** The public frontier moves FAST (neurogolf 6507→7800s in ~2 days). Reproducing a FRESH best-public base DWARFS hand-grinding: this session a re-RECON sweep gave neurogolf **+606** (6508→7114, LB-confirmed) and **+220** earlier — versus our autonomous hand-rebuild's **+1.35**. On ANY front sitting below the public frontier, a periodic sweep of Discussion/Code "Most Votes" (a `Workflow` fan-out is ideal) and reproducing the new best base is THE highest-ROI move. Don't grind crumbs on a stale base — re-recon first.
+
 ## Deep-agent self-improvement mechanisms (borrowed 2026-06)
 
 Distilled from the deepest public autonomy projects — EvoSkill (`sentient-agi/EvoSkill`), GEPA (`gepa-ai/gepa`, ICLR 2026 Oral), harness-evolver (`raphaelchristi/harness-evolver`), A-EVO-Lab — and wired into this skill. These are HOW the self-improving loop runs, not competition tactics. See [[deep-agent-orchestration-refs]].
