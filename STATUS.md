@@ -1,35 +1,43 @@
-# Kaggle Monitor Digest — 2026-06-24
+# Nightly Monitor Digest — 2026-06-25
 
-Metric direction confirmed per front from leaderboard ordering (top row = best); all four are higher-is-better.
+All four fronts: Pareto says **HOLD** the current best (each best is the sole non-dominated front member; all other versions strictly dominated/over-engineered). Submissions appear enabled everywhere (recent COMPLETE rows). Higher = better on every front (LB top row = best).
 
-## playground-series-s6e6
-- **Our best REAL score:** 0.97183 (`cand_A_anchor`, raw public best-single, 06-16).
-- **Ladder position:** top = yuki #2 0.97284; next Hamachi/nybbler 0.97252, vedant pol 0.97251. Gap from our best ≈ **0.00101**; we sit below the 0.9725 leader cluster.
-- **Deadline:** 2026-06-30 23:59 → **6 days left** (⚠ under 7 — flagged).
-- **Submissions enabled:** yes (all recent statuses COMPLETE).
-- **Pareto verdict:** 5 scored versions tonight. Front = {`cand_A_anchor` 0.97183} only (sole non-dominated). Dominated/over-engineered: softvote 0.97165, override_wide 0.97159, consensus 0.97148, TabPFN3_standalone 0.97061 — every blend strictly worse than the raw anchor. Tool says **HOLD** anchor.
-- **Next action:** Stop blending into the anchor — all 4 blends are dominated. With 6 days left, RECON current public SOTA kernels (sort by votes/recent) for a stronger BASE than 0.97183; the leaders already cleared 0.9725.
+---
 
-## orbit-wars
-- **Our best REAL score:** `v11` re-measure **658.3** (06-22), now the highest live read; `v8` re-measured to 640.5 on 06-23. (TrueSkill ±~150-noisy across re-measures — single reads unreliable.)
-- **Ladder position:** top = Isaiah @ Tufa Labs 1693.8; Jake Will 1616.8, TonyK 1602.7. We are ~658 → **massive gap (~1035)**, far down the ladder.
-- **Deadline:** 2026-07-07 23:59 → **13 days left** (NOTE: deadline is 07-07, not 06-23 as the prior digest assumed — the window is NOT closing tonight).
-- **Submissions enabled:** yes (recent COMPLETE).
-- **Pareto verdict:** 4 distinct versions (latest score each). Front = {`v11` 658.3} only. Dominated: v8 640.5, v7b 614.0, v6 596.3. Tool says **REPLACE** current best `v8` → `v11` Pareto-dominates it on tonight's measure.
-- **Next action:** Per the noise caveat (±150), do NOT hard-swap on one read — re-measure `v8` and `v11` head-to-head on the current field 2–3× before flipping the active agent. With 13 days now available there is time to confirm v11>v8 robustly rather than trust a single 658.3 vs 640.5.
+## playground-series-s6e6  (tabular Playground)
+- **Our best REAL score:** 0.97183 (`cand_A_anchor` = raw public best-single).
+- **Ladder:** top = 0.97284 (yuki #2). Gap to top ≈ **0.00101**. Cluster is dense (top-5: 0.97284 / 0.97258 / 0.97254 / 0.97253 / 0.97251).
+- **Deadline:** 2026-06-30 23:59 → **5 days left — UNDER 7, FLAG.**
+- **Submissions:** enabled.
+- **Pareto verdict:** front = {`cand_A_anchor` 0.97183}. Dominated/over-engineered: softvote 0.97165, coalition-override 0.97159, consensus 0.97148, TabPFN3-standalone 0.97061. Tool says **HOLD** — never replace front-member best with a non-dominating challenger.
+- **Next action:** Comp closes in 5 days. Blending the same public pool has plateaued (all blends < anchor). Do one fresh RECON of *current* public Code best-single; submit a richer BASE verbatim only if it standalone-beats 0.97183 — otherwise lock anchor as final.
 
-## neurogolf-2026
-- **Our best REAL score:** 7128.81 (`mark-b_7128`, franksunp audited single base + ARM-only, 06-22).
-- **Ladder position:** top = Fritz & Tony 7899.04; neurogolf team 7876.91, Pavel 7850.31 also ahead. Gap from our best ≈ **770**.
-- **Deadline:** 2026-07-15 23:59 → **21 days left**.
-- **Submissions enabled:** yes (recent COMPLETE).
-- **Pareto verdict:** 7 versions. Front = {`mark-b_7128` 7128.81} only. Dominated: kojimar_7114 7114.66, hand-rebuild_6508 6508.55, kojimar_6507 6507.21, v5 6287.25, v6_MEGA 6241.54, v7_overlay 6239.36 (cross-base merges sit at the bottom). Tool says **HOLD** mark-b.
-- **Next action:** Single audited base keeps climbing (6507→7114→7128); every cross-merge is dominated. RECON for the next stronger public single base toward the ~7899 top — keep the verbatim + ARM-only safety wrapper, don't merge bases.
+---
 
-## ai-agent-security-multi-step-tool-attacks
-- **Our best REAL score:** 51.750 (`N=575` cliff-edge probe, 06-21).
-- **Ladder position:** top = Victor Merckle 100.490; Team name placeholder 95.310, Kohei 93.760. Gap from our best ≈ **48.74** (under half the leader's score).
-- **Deadline:** 2026-09-01 23:59 → **69 days left**.
-- **Submissions enabled:** yes; 2 recent blank probes (N=720, N=800 — timed out at high N).
-- **Pareto verdict:** 5 scored N-points. Front = {`N=575` 51.75} only. Dominated: N=570 51.30, N=550 49.50, N=530 47.70, N=500 45.00 — monotone N-curve up to the timeout wall (~580). Tool says **HOLD** N=575.
-- **Next action:** N=720/800 returned BLANK (timeout wall above ~580); raw-N scaling is exhausted. The ~49pt gap to 100 needs a better *recipe* (more severity/cells per finding), not more candidates — study what leaders' attacks do differently before re-scaling N.
+## orbit-wars  (RTS simulation, $50k)
+- **Our best REAL score:** 655.4 (a v11 Horizon re-measure, 06-19); active floor is v8 ≈ 636–645 (latest v8 = 644.6). NOTE: TrueSkill ±150 variance — these are noisy re-measures of the same agents, not gains.
+- **Ladder:** top = 1616.5 (Isaiah @ Tufa Labs). Gap ≈ **+960 above us** — far behind; 4729 teams.
+- **Deadline:** 2026-07-07 23:59 → **12 days left.**
+- **Submissions:** enabled.
+- **Pareto verdict (latest measure per label):** front = {`v8` 644.6}. Dominated: v11 637.1, v7b 614.0. Tool says **HOLD v8**.
+- **Next action:** Hand-tuning/re-measuring agents has not closed a ~960-pt gap; per playbook the lever is search/RL ABOVE the heuristic teacher (PPO self-play that finishes within the time limit), not more variance-chasing re-submits. Hold v8 as floor; invest remaining 12 days in a trained planner, not re-measures.
+
+---
+
+## neurogolf-2026  (Research, $50k)
+- **Our best REAL score:** 7129.07 (`franksunp_7128` base + 6 true-rule rebuilds, 400/400 solved).
+- **Ladder:** top = 7940.11 (Matheus & Fritz & Tony). Gap to top ≈ **811**. Top-5: 7940 / 7911 / 7879 / 7839 / 7823.
+- **Deadline:** 2026-07-15 23:59 → **20 days left.**
+- **Submissions:** enabled.
+- **Pareto verdict:** front = {`franksunp_7128_truerule_rebuild` 7129.07}. Dominated: 7128.81-audited, kojimar 7114.66 / 6508.55 / 6507.21. Tool says **HOLD**.
+- **Next action:** Our edge over public base is only +0.26 (7129.07 vs 7128.81); 811 to the top. RECON the current public SOTA notebook (top moved to ~7940) and audit whether a fresher base transfers, rather than squeezing the franksunp base further.
+
+---
+
+## ai-agent-security-multi-step-tool-attacks  (Featured, $50k)
+- **Our best REAL score:** 51.750 (`N=575`). Two recent attempts (N=720, N=800) returned **BLANK** — the timeout/N-cliff wall (avoid N≥580).
+- **Ladder:** top = 100.490 (Victor Merckle). Gap to top ≈ **48.7**. Top-5: 100.49 / 95.31 / 93.76 / 93.32 / 89.55.
+- **Deadline:** 2026-09-01 23:59 → **68 days left.**
+- **Submissions:** enabled (but high-N submits fail/blank on timeout).
+- **Pareto verdict:** front = {`N575` 51.75}. Dominated: N570 51.30, N550 49.50. Linear N-curve holds in the 550–575 band (~0.09/N), but the score cliffs to blank at N≥580. Tool says **HOLD N575**.
+- **Next action:** Pure N-scaling is capped by the timeout wall well short of the top (we ~51.8 vs top ~100). Cut per-candidate runtime (the report-suppression path was already exploring this) so a higher N fits the budget without blanking, OR change the attack mechanism — N-tuning alone won't double the score.
