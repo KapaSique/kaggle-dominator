@@ -52,13 +52,13 @@ jobs:
       - name: Run re-RECON sweep (NO submit)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          COMP_SLUGS: ${{ vars.COMP_SLUGS }}
+          COMP_SLUGS: "pokemon-tcg-ai-battle"
         run: |
           if [ -z "$COMP_SLUGS" ]; then
             echo "COMP_SLUGS not set — nothing to re-recon."; exit 0
           fi
           chmod +x scripts/re_recon.sh
-          ./scripts/re_recon.sh "$COMP_SLUGS pokemon-tcg-ai-battle"
+          ./scripts/re_recon.sh "$COMP_SLUGS"
 
       - name: Commit re-recon digest
         run: |

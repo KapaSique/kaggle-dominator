@@ -1,0 +1,7 @@
+interface:
+  display_name: "Kaggle Dominator"
+  short_description: "Evidence-driven strategy for winning Kaggle"
+  brand_color: "#20BEFF"
+  default_prompt: "Use $kaggle-dominator to audit my live Kaggle fronts, focus resources, and execute the highest-value next experiment."
+policy:
+  allow_implicit_invocation: true

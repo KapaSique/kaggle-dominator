@@ -1,92 +1,91 @@
-# 🏆 kaggle-dominator
+# Kaggle Dominator
 
-**A [Claude Code](https://www.anthropic.com/claude-code) skill that turns the agent into a relentless Kaggle Grandmaster.**
+An evidence-driven strategy and execution skill for legitimate Kaggle competition
+work across tabular, computer vision, NLP/audio, simulation and agent ladders,
+code competitions, and judge-scored hackathons.
 
-![Claude Code Skill](https://img.shields.io/badge/Claude%20Code-Skill-d97757)
-![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-![Status](https://img.shields.io/badge/battle--tested-yes-success)
+It is the competitive brain: live reconnaissance, validation design,
+`BEST_KNOWN` protection, experiment portfolios, ensembling, campaign focus, and
+submission decisions. Pair it with a separate `kaggle` infrastructure skill for
+authentication, downloads, kernels, and API plumbing.
 
-> Not another list of tips. A **battle constitution** + a **technique arsenal** that sets the operating mode for a whole competition session: recon the top public solutions, protect a `BEST_KNOWN`, run experiments in parallel GPU-kernel batches, **trust only the real metric**, and ensemble your way to the prize zone.
+## What v3 adds
 
-Most "ML assistant" prompts make the agent agreeable and verbose. This one makes it *win*. It encodes the habits that actually move a leaderboard — and, just as importantly, the anti-patterns that quietly wreck a score (chasing a local metric, replacing a working baseline with an unverified idea, believing a single noisy number).
+- Universal routing across all major Kaggle formats.
+- Portfolio states (`ACTIVE`, `MONITOR_ONLY`, `PAUSED`, `CLOSED`) and explicit
+  budgets for attention, compute, submissions, storage, and deadline slack.
+- A candidate queue with exploit/explore/audit lanes and stop/continue gates.
+- Fresh-score, metric-direction, submission-availability, and provenance checks.
+- Clear authority boundaries for submissions and public actions.
+- Compliance, attribution, reproducibility, and anti-leakage safeguards.
+- Learning checklists, public-resource guidance, an account scorecard, measured
+  cross-domain lessons, and bounded autonomous loops.
+- Contract tests and Codex discovery metadata.
 
----
+## Core loop
 
-## Why it's different
+```text
+live recon
+  → front card and resource budget
+  → reproduce strongest compliant baseline
+  → trustworthy validation / arena
+  → candidate batch with cheap gates
+  → full measurement and diversity analysis
+  → submission decision with authority + quota checks
+  → fresh score, ledger update, next decision
+```
 
-| Most prompts | kaggle-dominator |
+A candidate never replaces `BEST_KNOWN` until the correct real metric confirms it.
+If validation disagrees with the leaderboard or ladder, repair validation before
+continuing to tune.
+
+## References
+
+| Need | Reference |
 |---|---|
-| "Here are some ideas you could try" | Decide → run → measure → next. One number or it didn't happen. |
-| One model, tuned forever | Dozens of OOF in parallel kernel batches, Hill-Climb the ensemble |
-| Trusts local CV | **Validation must match the LB** — fix the proxy *first* if it drifts |
-| Replaces the baseline with the new idea | Keeps a protected `BEST_KNOWN`; new ideas are *additional* attempts |
-| Generic advice | Loads a **type-specific arsenal** (tabular / DL / simulation / code / hackathon) |
-
-## The five iron rules
-
-1. **Recon first, code second.** Reproduce the best public baseline before writing your own.
-2. **Preserve the best.** `BEST_KNOWN` changes only after the *real* metric confirms it.
-3. **Trust the real metric only.** "Should help" is a hallucination until measured.
-4. **Validation must match reality.** If local says 70% and the LB drops, the validation is broken — fix it first.
-5. **Proof-of-work.** "Done / improved" comes only with a number on the correct metric.
-
-## What's inside
-
-Progressive disclosure — the constitution loads on trigger, the detailed arsenal loads on demand by competition type:
-
-| Competition type | Arsenal file |
-|---|---|
-| **🏅 Grandmaster playbook (read always)** | [`references/grandmaster-playbook.md`](references/grandmaster-playbook.md) — cross-cutting craft distilled from how real GMs operate (bestfitting, Chris Deotte, Abhishek Thakur, Puget): the CV doctrine, adversarial validation, Hill-Climb ensembling, magic features, the meta-game, post-processing to the metric, shakeup survival. *How the winners think*, not just which technique. |
-| Tabular / Playground | [`references/tabular.md`](references/tabular.md) — OOF factory × Hill Climbing × multi-level stacking × pseudo-labeling × the flat-zone exit |
-| Computer Vision / NLP | [`references/deep-learning.md`](references/deep-learning.md) — backbones, augmentation, TTA, pseudo-labeling, WBF/NMS |
-| Simulation / Agent ladder | [`references/simulation.md`](references/simulation.md) — opponent pools, lookahead/MCTS, stability > cleverness |
-| Code competition / Hackathon | [`references/code-and-hackathon.md`](references/code-and-hackathon.md) — regression guards, rubric-as-metric, the writeup |
-| Tools & treasure troves | [`references/arsenal.md`](references/arsenal.md) — TabPFN, winning-solution repos, NVIDIA Grandmasters Playbook, cuML, W&B |
-| Autonomous / hands-off | [`references/autonomous.md`](references/autonomous.md) — eval-driven loops, parallel agent teams, overnight headless runs — **with guardrails** (protected `BEST_KNOWN`, budget caps, gated submissions). Ships [`scripts/kaggle_eval_loop.sh`](scripts/kaggle_eval_loop.sh) + a [`scripts/nightly-agent.yml`](scripts/nightly-agent.yml) GitHub Actions template |
-| 🔁 Self-curating | [`references/self-improvement.md`](references/self-improvement.md) — the skill improves *itself*: a curator agent harvests measured insights across all your battles and proposes skill edits as a PR. Ships [`scripts/skill_curator.sh`](scripts/skill_curator.sh) + [`scripts/skill-curator.yml`](scripts/skill-curator.yml). Discipline-first: only measured facts, append-only, human merges. |
-
-## Battle-tested on 8 real competitions
-
-This isn't theory-ware. The skill was audited against the **actual submission histories** of 8 live competitions (one account, measured on the real leaderboard) — and it learned its sharpest lessons from them:
-
-| Competition | Type | Measured result | The lever |
-|---|---|---|---|
-| Playground S6E6 | tabular | 0.97106 → **0.97183** (rank ~198 → ~91, **top 5%**) | reproduce the *fresh* public best-single verbatim |
-| orbit-wars | RTS simulation | 573 → **737.9** (+165 one step) | exact forward simulator + lookahead rollouts |
-| maze-crawler | ladder | 789 → **1046** | public BFS baseline + time-aware pruning + scout goals |
-| neurogolf | ONNX opt | 6275 → **6287** | honest holdout-validated component selection |
-| neural-debris | unlearning | 259.8 → **329.5** (+70) | a pure `sqrt` confidence transform (no model change) |
-| security (exfil) | code | 6–15 → **18.11** | single-post mass in a *reliable own harness* |
-| s6e5 | tabular (private) | → **0.9546** private | public rank-avg consensus + an honest-CV hedge |
-
-**The biggest lesson it learned about its own user:** *over-engineering past the peak* — adding a clever layer on top of a working simple solution — measurably **cost score in 6 of those 8 competitions**. That anti-pattern is now baked into the skill, with the numbers. Every future battle feeds the [self-curation loop](references/self-improvement.md) and makes it sharper.
+| Multiple fronts and resource focus | [`campaign-control.md`](references/campaign-control.md) |
+| Cross-domain competitive process | [`grandmaster-playbook.md`](references/grandmaster-playbook.md) |
+| Measured account history | [`scorecard.md`](references/scorecard.md) |
+| Tabular | [`tabular.md`](references/tabular.md) |
+| CV, NLP, audio, signals | [`deep-learning.md`](references/deep-learning.md) |
+| Simulation and agents | [`simulation.md`](references/simulation.md) |
+| Code competitions and hackathons | [`code-and-hackathon.md`](references/code-and-hackathon.md) |
+| Autonomous bounded loops | [`autonomous.md`](references/autonomous.md) |
+| Self-curation | [`self-improvement.md`](references/self-improvement.md) |
+| ML craft | [`learning-craft.md`](references/learning-craft.md) |
+| Learning sources and attribution | [`resources.md`](references/resources.md) |
+| Winning solution patterns | [`winning-solutions.md`](references/winning-solutions.md) |
+| Tools and communities | [`arsenal.md`](references/arsenal.md) |
 
 ## Install
 
-**Option A — clone into your skills directory (recommended):**
+Codex project-local installation:
 
 ```bash
-git clone https://github.com/KapaSique/kaggle-dominator.git ~/.claude/skills/kaggle-dominator
+git clone https://github.com/KapaSique/kaggle-dominator.git \
+  .agents/skills/kaggle-dominator
 ```
 
-Then in any Claude Code session it auto-triggers on Kaggle work, or invoke explicitly with `/kaggle-dominator`.
+Codex user installation:
 
-**Option B — one-file install:** grab [`kaggle-dominator.skill`](kaggle-dominator.skill) and drop it in via your skill manager.
+```bash
+git clone https://github.com/KapaSique/kaggle-dominator.git \
+  ~/.agents/skills/kaggle-dominator
+```
 
-**Option C — project-local:** copy `SKILL.md` + `references/` into `<your-project>/.claude/skills/kaggle-dominator/`.
+Invoke it explicitly as `$kaggle-dominator`, or let it trigger on competitive
+Kaggle strategy requests. It deliberately does not trigger for badge collection,
+account configuration, or CLI installation alone.
 
-> Pairs cleanly with infrastructure skills (CLI/MCP/badges) — this one is the **strategy brain**, those are the **plumbing**. Use both.
+## Verify
 
-## Battle-tested
-
-This isn't theory-ware. On a live Playground competition (stuck in a flat zone at a hard score ceiling) the skill's "**confirm the metric, don't guess it**" rule caught a trap: the pipeline *looked* like it was optimizing the wrong objective. Instead of charging in to "fix" it, the constitution forced a probe — submit a constant prediction, read the score back. The number (`0.33333` for a 3-class problem) revealed the metric was **balanced accuracy**, the pipeline was already correct, and the "fix" would have *tanked* the score. Rule 3 (*trust only the real metric*) prevented a confident, plausible, wrong move.
-
-That probe trick is now baked into the skill.
-
-## Philosophy
-
-Built from real losses, not vibes. Descended from a personal "Kaggle superprompt" and distilled with lessons from the [NVIDIA Kaggle Grandmasters Playbook](https://developer.nvidia.com/blog/the-kaggle-grandmasters-playbook-7-battle-tested-modeling-techniques-for-tabular-data/) and the community [winning-solutions archive](https://github.com/faridrashidi/kaggle-solutions).
+```bash
+python3 -m unittest -v tests/test_skill_contract.py
+python3 /path/to/skill-creator/scripts/quick_validate.py .
+bash -n scripts/*.sh
+python3 -m py_compile scripts/*.py tests/*.py
+```
 
 ## License
 
-[MIT](LICENSE) — use it, fork it, win with it. PRs welcome.
+[MIT](LICENSE)

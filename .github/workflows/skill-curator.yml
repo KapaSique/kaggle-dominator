@@ -55,7 +55,7 @@ jobs:
         run: |
           chmod +x scripts/skill_curator.sh
           # The repo root IS the skill dir here; the curator edits in place.
-          ./scripts/skill_curator.sh . ${{ vars.COMP_SLUGS }} || true
+          ./scripts/skill_curator.sh . pokemon-tcg-ai-battle pokemon-tcg-ai-battle-challenge-strategy || true
 
       - name: Open PR + verified auto-merge (agents-managing-agents)
         env:

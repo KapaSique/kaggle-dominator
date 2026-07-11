@@ -6,9 +6,9 @@
 #                KAGGLE_JSON         (contents of your ~/.kaggle/kaggle.json, OR a KGAT_ access token)
 #     Variables: COMP_SLUGS          (space-separated fronts, e.g. "playground-series-s6e6 orbit-wars ...")
 #
-# What it does each night: for EVERY front in COMP_SLUGS it reads the REAL Kaggle state
-# (submission scores, ladder rank, deadline, submissions-enabled) via the API, writes a dated
-# digest to STATUS.md, and appends any MEASURED transferable insight to the playbook.
+# Current campaign policy: monitor the Pokémon ladder and linked judged track only.
+# It reads the REAL Kaggle state, writes a dated digest to STATUS.md, and appends any
+# MEASURED transferable insight to the playbook.
 # It NEVER submits — monitoring + curation only. Cloud-CI cannot see your local comp folders;
 # real agent grinding of local work requires a self-hosted runner (see scripts/SELF_HOSTED.md).
 name: nightly-kaggle-agent
@@ -68,7 +68,7 @@ jobs:
       - name: Run multi-front monitor (headless, NO submit)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          COMP_SLUGS: ${{ vars.COMP_SLUGS }}
+          COMP_SLUGS: "pokemon-tcg-ai-battle pokemon-tcg-ai-battle-challenge-strategy"
         run: |
           if [ -z "$COMP_SLUGS" ]; then
             echo "COMP_SLUGS variable is not set — nothing to monitor."; exit 0

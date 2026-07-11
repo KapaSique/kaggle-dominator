@@ -1,6 +1,9 @@
 # Tabular — Playground and tabular competitions
 
-Here the winner is **volume of out-of-fold predictions × diversity of sources × Hill Climbing**. Not one genius model, but dozens of different OOF the ensemble picks the best subset from.
+Strong tabular results often come from **trustworthy out-of-fold predictions ×
+diversity × evidence-based blending**. Start with a few strong, genuinely different
+models; expand only while the next model earns score, stability, or complementary
+errors on the same validation protocol.
 
 ## Contents
 - [Core principle: the OOF factory](#core-principle-the-oof-factory)
@@ -16,15 +19,22 @@ Here the winner is **volume of out-of-fold predictions × diversity of sources �
 
 ## Core principle: the OOF factory
 
-The goal is dozens of OOF predictions from combinations of:
+Start with 2–3 strong combinations, then promote additional combinations only when
+they add measured value:
 
 ```
 [feature sets] × [TabPFN / XGB / LGBM / CatBoost / NN / AutoGluon] × [hyperparams / seeds]
 ```
 
-Each combination = one kernel = one OOF file (train predictions by fold) + test predictions. Run them in **parallel batches** under different slugs. Small tabular data trains in minutes → dozens of runs an evening is realistic.
+Each combination = one kernel = one OOF file (train predictions by fold) + test
+predictions. Run independent candidates in bounded parallel batches when the data,
+compute budget, and validation quality justify it. Do not scale a model factory
+before the OOF protocol is trusted.
 
-**Pull other people's OOF.** Top public notebooks often publish predictions — that's free diversity for your ensemble. During RECON, collect not just ideas but the actual submission/OOF files.
+**Audit public predictions before reuse.** Use another author's OOF/submission only
+when the competition rules and license allow it; credit the source and verify row
+identity/order, fold compatibility, schema, provenance, and leakage risk. Public
+predictions can add diversity, but they are not automatically compatible or free.
 
 Keep a single registry: `results.csv` (slug, features, model, params, CV, LB) in a private dataset. Without it you'll be lost by experiment #30.
 
@@ -37,7 +47,9 @@ The finale is NOT a manual average. Hill Climbing over OOF picks the weights/sub
 3. Stop when adding stops helping.
 4. Apply the same weights to the test predictions.
 
-It beats a manual `mean()` almost always, because it drops harmful predictors and weights useful ones. Runs in seconds on CPU.
+Compare it with the best single model and simple constrained blends on the exact
+same OOF. Keep hill climbing only when it improves held-out evidence without brittle
+weights; it runs in seconds on CPU but can still overfit a small OOF set.
 
 ## Multi-level stacking
 
@@ -63,12 +75,15 @@ Gives a boost where the number of examples matters. Careful: only from an honest
 
 Different model natures → different errors → a stronger ensemble:
 
-- **TabPFN v2.5** — foundation model, no training, seconds; often the strongest single model on small/medium data. A must-have in the pool. (If you subsample its context too hard on large data, it gets crippled — bag several fits on a larger context instead.)
+- **TabPFN v2.5** — a useful candidate for small/medium data when licensing,
+  runtime, feature types, and context size fit. Benchmark it against simpler models
+  before paying for bags or ensembles.
 - **GBDT** — LightGBM, XGBoost, CatBoost. The workhorses. Different seeds/depths/features = different OOF.
 - **NN** — tabular MLP / TabNet / FT-Transformer; errs differently from trees → valuable in the ensemble even if weaker alone.
 - **AutoGluon** — a whole stack out of the box; another independent OOF.
 
-Rule: one OOF predictor = death in the flat zone. Minimum 3 different natures.
+Rule: one model family rarely reveals whether a plateau is model-limited. Test a
+small number of genuinely different natures, then keep only measured contributors.
 
 ## Feature engineering
 

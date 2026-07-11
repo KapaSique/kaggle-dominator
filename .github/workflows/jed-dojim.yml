@@ -6,8 +6,7 @@
 name: jed-dojim
 
 on:
-  schedule:
-    - cron: "37 8 * * *"    # daily 08:37 UTC (after the 07:35 quota-window edge)
+  # Schedule disabled while Pokémon owns the ACTIVE campaign budget.
   workflow_dispatch: {}
 
 permissions:

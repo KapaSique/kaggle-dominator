@@ -5,9 +5,8 @@
 name: keep-warm-triagegeist
 
 on:
-  schedule:
-    - cron: "13 */6 * * *"   # every 6 hours at :13 (off the :00 stampede)
-  workflow_dispatch: {}       # manual "Run workflow" button
+  # Schedule retired after the 2026-06-21 judging deadline.
+  workflow_dispatch: {}
 
 permissions:
   contents: read
