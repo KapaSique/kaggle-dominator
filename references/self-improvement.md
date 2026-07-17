@@ -39,18 +39,25 @@ signed attestations.
 
 ## State and immutable storage
 
-The durable flow is:
+The approved full **orchestrator/checkpoint lifecycle** is:
 
 ```text
-OBSERVED -> EVALUATED -> VERIFIED -> PROMOTED
-                       \-> REJECTED
+OBSERVED -> PROPOSED -> EVALUATED -> VERIFIED -> PROMOTED
+               |            |            |
+               +-----> STALE+------------+
+               +-----> REJECTED <--------+
 PROMOTED -> ROLLED_BACK
 ```
 
-Observed scout/trial evidence becomes `EVALUATED` only after schema validation.
-Verification and comparison are gate inputs; a failed or stale gate appends a
-machine-readable `REJECTED` event without touching generated guidance. State lives
-outside the packaged skill by default:
+`PROPOSED` and `STALE` are orchestrator/checkpoint lifecycle labels, not claims that
+the persisted engine ledger appends those events. The trusted root records
+`PROPOSED` after sealing a candidate brief and records `STALE` when a source,
+artifact, or review expires before a usable gate. The persisted engine ledger records
+`OBSERVED` then `EVALUATED` for valid evidence, `VERIFIED` for a passing gate,
+`REJECTED` for a failed (including stale) gate, and `PROMOTED`/`ROLLED_BACK` for
+their corresponding operations. A verifier artifact with verdict `STALE` therefore
+fails closed into persisted `REJECTED`; it is not falsely represented as an engine
+`STALE` event. State lives outside the packaged skill by default:
 
 ```text
 <workspace>/.dominator/evolution/

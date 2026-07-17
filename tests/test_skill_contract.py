@@ -5,6 +5,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "SKILL.md"
+SELF_IMPROVEMENT = ROOT / "references" / "self-improvement.md"
 
 
 class SkillContractTests(unittest.TestCase):
@@ -67,6 +68,16 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("references/learned-playbook.md", learning_section)
         for protected in ("SKILL.md", "frontmatter", "safety", "policy"):
             self.assertIn(protected, learning_section)
+
+    def test_self_improvement_reference_has_full_lifecycle_without_engine_claim_drift(self) -> None:
+        text = SELF_IMPROVEMENT.read_text(encoding="utf-8")
+        self.assertIn(
+            "OBSERVED -> PROPOSED -> EVALUATED -> VERIFIED -> PROMOTED", text
+        )
+        for state in ("REJECTED", "STALE", "ROLLED_BACK"):
+            self.assertIn(state, text)
+        self.assertIn("orchestrator/checkpoint", text)
+        self.assertIn("persisted engine ledger", text)
 
     def test_old_skill_name_is_gone_from_runtime_files(self) -> None:
         runtime_files = [SKILL, *sorted((ROOT / "references").glob("*.md"))]
