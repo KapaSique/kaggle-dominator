@@ -538,6 +538,158 @@ class EvolutionPromotionTests(unittest.TestCase):
         )
         self.assertNotIn(valid_evidence()["claim"], self.learned_playbook.read_text(encoding="utf-8"))
 
+    def test_promote_retry_recovers_missing_terminal_ledger_event(self) -> None:
+        self.record()
+        original_append = evolution.append_jsonl
+
+        def fail_promoted_ledger_append(path: Path, payload: dict) -> None:
+            if path == self.state_dir / "ledger.jsonl" and payload.get("event") == "PROMOTED":
+                raise EvolutionError("injected promoted ledger failure")
+            original_append(path, payload)
+
+        with patch.object(evolution, "append_jsonl", side_effect=fail_promoted_ledger_append):
+            with self.assertRaisesRegex(EvolutionError, "injected promoted ledger failure"):
+                self.store.promote("cand-1", passing_verifier(), passing_comparator())
+
+        promotion = self.store.promote("cand-1", passing_verifier(), passing_comparator())
+        terminal_events = [
+            event for event in read_jsonl(self.state_dir / "ledger.jsonl") if event["event"] == "PROMOTED"
+        ]
+
+        self.assertEqual(len(read_jsonl(self.state_dir / "promotions.jsonl")), 1)
+        self.assertEqual(len(terminal_events), 1)
+        self.assertEqual(self.store.latest_state("cand-1"), "PROMOTED")
+        self.assertIn(promotion["evidence"]["claim"], self.learned_playbook.read_text(encoding="utf-8"))
+
+    def test_rollback_retry_recovers_missing_terminal_ledger_event(self) -> None:
+        self.record()
+        promotion = self.store.promote("cand-1", passing_verifier(), passing_comparator())
+        original_append = evolution.append_jsonl
+
+        def fail_rolled_back_ledger_append(path: Path, payload: dict) -> None:
+            if path == self.state_dir / "ledger.jsonl" and payload.get("event") == "ROLLED_BACK":
+                raise EvolutionError("injected rollback ledger failure")
+            original_append(path, payload)
+
+        with patch.object(evolution, "append_jsonl", side_effect=fail_rolled_back_ledger_append):
+            with self.assertRaisesRegex(EvolutionError, "injected rollback ledger failure"):
+                self.store.rollback(promotion["promotion_id"], "regression")
+
+        rollback = self.store.rollback(promotion["promotion_id"], "regression")
+        terminal_events = [
+            event for event in read_jsonl(self.state_dir / "ledger.jsonl") if event["event"] == "ROLLED_BACK"
+        ]
+
+        self.assertEqual([event["event"] for event in read_jsonl(self.state_dir / "promotions.jsonl")], ["PROMOTED", "ROLLED_BACK"])
+        self.assertEqual(len(terminal_events), 1)
+        self.assertEqual(rollback["event"], "ROLLED_BACK")
+        self.assertEqual(self.store.latest_state("cand-1"), "ROLLED_BACK")
+        self.assertNotIn(valid_evidence()["claim"], self.learned_playbook.read_text(encoding="utf-8"))
+
+    def test_terminal_ledger_recovery_rejects_out_of_order_history(self) -> None:
+        self.record()
+        promotion = self.store.promote("cand-1", passing_verifier(), passing_comparator())
+        evolution.append_jsonl(
+            self.state_dir / "ledger.jsonl",
+            {
+                "candidate_id": "cand-1",
+                "event": "ROLLED_BACK",
+                "promotion_id": promotion["promotion_id"],
+                "occurred_at_utc": promotion["occurred_at_utc"],
+            },
+        )
+        ledger_before = (self.state_dir / "ledger.jsonl").read_bytes()
+
+        with self.assertRaises(EvolutionError):
+            self.store.promote("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertEqual((self.state_dir / "ledger.jsonl").read_bytes(), ledger_before)
+
+    def test_terminal_ledger_recovery_rejects_nonterminal_event_after_promotion(self) -> None:
+        self.record()
+        promotion = self.store.promote("cand-1", passing_verifier(), passing_comparator())
+        evolution.append_jsonl(
+            self.state_dir / "ledger.jsonl",
+            {
+                "candidate_id": "cand-1",
+                "event": "VERIFIED",
+                "occurred_at_utc": promotion["occurred_at_utc"],
+            },
+        )
+        ledger_before = (self.state_dir / "ledger.jsonl").read_bytes()
+
+        with self.assertRaises(EvolutionError):
+            self.store.promote("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertEqual((self.state_dir / "ledger.jsonl").read_bytes(), ledger_before)
+
+    def test_history_rejects_two_promotions_on_one_normalized_utc_date(self) -> None:
+        first = self.promotion_event(
+            candidate_id="cand-first",
+            promotion_id="first@2026-07-17T00:00:00Z",
+            occurred_at_utc="2026-07-17T03:00:00+03:00",
+        )
+        second = self.promotion_event(
+            candidate_id="cand-second",
+            promotion_id="second@2026-07-17T22:00:00Z",
+            occurred_at_utc="2026-07-17T22:00:00Z",
+        )
+        path = self.state_dir / "promotions.jsonl"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(first) + "\n" + json.dumps(second) + "\n", encoding="utf-8")
+        promotions_before = path.read_bytes()
+
+        with self.assertRaises(EvolutionError):
+            self.store.gate_candidate("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertEqual(path.read_bytes(), promotions_before)
+
+    def test_history_rejects_nonfinite_or_boolean_improvement(self) -> None:
+        for improvement in (float("nan"), float("inf"), True):
+            with self.subTest(improvement=improvement):
+                event = self.promotion_event()
+                event["improvement"] = improvement
+                path = self.state_dir / "promotions.jsonl"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+
+                with self.assertRaises(EvolutionError):
+                    self.store._render_learned_playbook()
+
+    def test_nonfinite_promotion_history_returns_cli_error_without_writes(self) -> None:
+        self.record()
+        event = self.promotion_event()
+        event["improvement"] = float("nan")
+        promotions_path = self.state_dir / "promotions.jsonl"
+        promotions_path.parent.mkdir(parents=True, exist_ok=True)
+        promotions_path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+        promotions_before = promotions_path.read_bytes()
+        ledger_before = (self.state_dir / "ledger.jsonl").read_bytes()
+        verifier = Path(self.temp_dir.name) / "verifier.json"
+        comparator = Path(self.temp_dir.name) / "comparator.json"
+        verifier.write_text(json.dumps(passing_verifier()), encoding="utf-8")
+        comparator.write_text(json.dumps(passing_comparator()), encoding="utf-8")
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr):
+            result = evolution.main(
+                [
+                    "--root",
+                    str(self.state_dir),
+                    "--skill-root",
+                    str(self.skill_root),
+                    "gate",
+                    "cand-1",
+                    str(verifier),
+                    str(comparator),
+                ]
+            )
+
+        self.assertEqual(result, 2)
+        self.assertIn("evolution error:", stderr.getvalue())
+        self.assertEqual(promotions_path.read_bytes(), promotions_before)
+        self.assertEqual((self.state_dir / "ledger.jsonl").read_bytes(), ledger_before)
+
     def test_promotion_uses_one_timestamp_across_utc_boundary(self) -> None:
         evolution.append_jsonl(
             self.state_dir / "promotions.jsonl",

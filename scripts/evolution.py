@@ -11,6 +11,7 @@ from decimal import Decimal
 from datetime import datetime, timezone
 import fcntl
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -190,6 +191,12 @@ def _is_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def _is_finite_number(value: object) -> bool:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return True
+    return isinstance(value, float) and math.isfinite(value)
+
+
 def validate_evidence(evidence: dict) -> None:
     """Validate the evaluated-candidate evidence schema before it enters a ledger."""
     if not isinstance(evidence, dict):
@@ -352,6 +359,7 @@ class EvolutionStore:
         """Reject malformed immutable promotion history before using any event."""
         promotion_ids: dict[str, dict] = {}
         promoted_candidates: set[str] = set()
+        promotion_dates: set[str] = set()
         rolled_back: set[str] = set()
         for index, event in enumerate(events, start=1):
             context = f"promotions[{index}]"
@@ -362,11 +370,13 @@ class EvolutionStore:
                 promotion_id = self._required_string(event, "promotion_id", context)
                 candidate_id = self._required_string(event, "candidate_id", context)
                 occurred_at_utc = self._required_string(event, "occurred_at_utc", context)
-                _normalize_utc(occurred_at_utc)
+                promotion_date = _normalize_utc(occurred_at_utc)[:10]
                 if promotion_id in promotion_ids:
                     raise EvolutionError(f"duplicate promotion_id {promotion_id!r}")
                 if candidate_id in promoted_candidates:
                     raise EvolutionError(f"duplicate promoted candidate {candidate_id!r}")
+                if promotion_date in promotion_dates:
+                    raise EvolutionError(f"duplicate promotion date {promotion_date}")
                 evidence = event.get("evidence")
                 if not isinstance(evidence, dict):
                     raise EvolutionError(f"{context}.evidence must be an object")
@@ -376,10 +386,11 @@ class EvolutionStore:
                     raise EvolutionError(f"{context}.evidence.state must be EVALUATED")
                 if evidence.get("candidate_id") != candidate_id:
                     raise EvolutionError(f"{context}.evidence candidate_id does not match promotion")
-                if not _is_number(event.get("improvement")):
-                    raise EvolutionError(f"{context}.improvement must be a number")
+                if not _is_finite_number(event.get("improvement")):
+                    raise EvolutionError(f"{context}.improvement must be a finite number")
                 promotion_ids[promotion_id] = event
                 promoted_candidates.add(candidate_id)
+                promotion_dates.add(promotion_date)
             elif event_type == "ROLLED_BACK":
                 promotion_id = self._required_string(event, "promotion_id", context)
                 candidate_id = self._required_string(event, "candidate_id", context)
@@ -421,6 +432,55 @@ class EvolutionStore:
             if event.get("event") == "PROMOTED" and event.get("candidate_id") == candidate_id:
                 return event
         return None
+
+    def _reconcile_terminal_ledger(self, candidate_id: str, promotions: list[dict]) -> None:
+        """Repair only a valid missing suffix of PROMOTED/ROLLED_BACK ledger events."""
+        expected = [
+            event
+            for event in promotions
+            if event.get("candidate_id") == candidate_id
+            and event.get("event") in {"PROMOTED", "ROLLED_BACK"}
+        ]
+        candidate_ledger = [
+            event
+            for event in read_jsonl(self._ledger_path)
+            if event.get("candidate_id") == candidate_id
+        ]
+        terminal_types = {"PROMOTED", "ROLLED_BACK"}
+        first_terminal = next(
+            (index for index, event in enumerate(candidate_ledger) if event.get("event") in terminal_types),
+            None,
+        )
+        if first_terminal is not None and any(
+            event.get("event") not in terminal_types for event in candidate_ledger[first_terminal + 1 :]
+        ):
+            raise EvolutionError(f"terminal ledger history is contradictory for {candidate_id!r}")
+        terminal_events = [
+            event for event in candidate_ledger if event.get("event") in terminal_types
+        ]
+        if len(terminal_events) > len(expected):
+            raise EvolutionError(f"terminal ledger history is not a valid prefix for {candidate_id!r}")
+        for recorded, source in zip(terminal_events, expected):
+            if recorded.get("event") != source["event"]:
+                raise EvolutionError(f"terminal ledger history is out of order for {candidate_id!r}")
+            if recorded.get("promotion_id") != source["promotion_id"]:
+                raise EvolutionError(f"terminal ledger promotion_id contradicts history for {candidate_id!r}")
+            try:
+                recorded_time = _normalize_utc(recorded["occurred_at_utc"])
+            except (KeyError, EvolutionError) as error:
+                raise EvolutionError(f"terminal ledger timestamp is invalid for {candidate_id!r}") from error
+            if recorded_time != _normalize_utc(source["occurred_at_utc"]):
+                raise EvolutionError(f"terminal ledger timestamp contradicts history for {candidate_id!r}")
+        for source in expected[len(terminal_events) :]:
+            append_jsonl(
+                self._ledger_path,
+                {
+                    "candidate_id": candidate_id,
+                    "event": source["event"],
+                    "promotion_id": source["promotion_id"],
+                    "occurred_at_utc": source["occurred_at_utc"],
+                },
+            )
 
     @staticmethod
     def _same_utc_date(left: str, right: str) -> bool:
@@ -702,9 +762,10 @@ class EvolutionStore:
         if not isinstance(candidate_id, str) or not candidate_id:
             raise EvolutionError("candidate_id must be a non-empty string")
         with self._promotion_lock():
-            self._promotion_events()
+            promotions = self._promotion_events()
             existing = self._existing_promotion(candidate_id)
             if existing is not None:
+                self._reconcile_terminal_ledger(candidate_id, promotions)
                 self._render_learned_playbook()
                 return existing
             occurred_at_utc = _now_utc()
@@ -767,6 +828,7 @@ class EvolutionStore:
                 None,
             )
             if existing is not None:
+                self._reconcile_terminal_ledger(promotion["candidate_id"], promotions)
                 self._render_learned_playbook()
                 return existing
             rollback = {
