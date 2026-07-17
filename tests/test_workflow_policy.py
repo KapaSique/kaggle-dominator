@@ -24,15 +24,56 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn('COMP_SLUGS: "pokemon-tcg-ai-battle"', text)
         self.assertNotIn("COMP_SLUGS: ${{ vars.COMP_SLUGS }}", text)
 
-    def test_curator_harvests_only_current_campaign(self) -> None:
-        text = self.read("skill-curator.yml")
-        command = (
-            "./scripts/skill_curator.sh . pokemon-tcg-ai-battle "
-            "pokemon-tcg-ai-battle-challenge-strategy"
+    def test_curator_wrappers_only_forward_to_local_engine(self) -> None:
+        scripts = {
+            "skill_curator.sh": 'exec python3 scripts/evolution.py "$@"',
+            "curator_verify.sh": 'exec python3 scripts/evolution.py gate "$@"',
+        }
+        prohibited = (
+            "claude -p",
+            "kaggle",
+            "git ",
+            "gh ",
+            "github",
+            "anthropic",
+            "pokemon-tcg",
         )
-        self.assertIn(command, text)
+        for name, expected_forwarder in scripts.items():
+            text = (ROOT / "scripts" / name).read_text(encoding="utf-8").lower()
+            self.assertIn(expected_forwarder.lower(), text, name)
+            for forbidden in prohibited:
+                self.assertNotIn(forbidden, text, f"{name}: {forbidden}")
+
+    def test_curator_workflows_are_manual_read_only_validation(self) -> None:
+        prohibited = (
+            "schedule:",
+            "contents: write",
+            "pull-requests: write",
+            "secrets.",
+            "github_token",
+            "git push",
+            "git commit",
+            "gh pr create",
+            "gh pr merge",
+            "claude -p",
+            "kaggle",
+            "pokemon-tcg",
+        )
+        copies = (
+            ROOT / "scripts" / "skill-curator.yml",
+            WORKFLOWS / "skill-curator.yml",
+        )
+        rendered = []
+        for path in copies:
+            text = path.read_text(encoding="utf-8").lower()
+            rendered.append(text)
+            self.assertIn("workflow_dispatch:", text, str(path))
+            self.assertIn("contents: read", text, str(path))
+            self.assertIn("python3 scripts/evolution.py status", text, str(path))
+            for forbidden in prohibited:
+                self.assertNotIn(forbidden, text, f"{path}: {forbidden}")
+        self.assertEqual(rendered[0], rendered[1], "workflow copies must not drift")
 
 
 if __name__ == "__main__":
     unittest.main()
-

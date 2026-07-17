@@ -1,72 +1,168 @@
-# Self-improvement — the skill that curates itself
+# Evidence-gated self-improvement
 
-The deepest level of the iceberg (HUMANITY: *agents managing agents*, *agent-built tooling*, *self-improving loops*) turned on the skill itself. "CAPTURE WHAT YOU LEARN" in SKILL.md is the *manual, in-session* reflex — write a measured insight the moment you hit it. This file closes that into an *autonomous loop*: a curator agent periodically harvests the measured lessons from real battles and wires them into the skill on its own.
+Read this with `references/learned-playbook.md` when measured work may produce a
+reusable lesson. The latter is generated from active promotions and is the only
+file automatic promotion may change. `SKILL.md`, its frontmatter, safety and
+policy rules, authority boundaries, credentials, campaign control, submission
+policy, and every other reference are protected.
 
-**This is genuinely dangerous** — an agent editing its own instructions can drift, bloat, or corrupt itself. So the entire design is discipline-first. The same thing that makes the skill *ascended* and not *degenerate*: autonomy built on hard guardrails, never instead of them.
+The local deterministic engine is `scripts/evolution.py`. It records and renders
+evidence; it never submits to Kaggle, accepts rules, changes teams/settings,
+publishes, spends money, or writes to GitHub. Those external actions always need
+explicit user approval.
 
-Read this when the user wants the skill to keep improving hands-off, or asks about self-curation / the curator loop.
+## Trusted orchestration and separated roles
 
-## Contents
-- [The two paths an insight enters the skill](#the-two-paths-an-insight-enters-the-skill)
-- [The curator loop](#the-curator-loop)
-- [Orchestration shape (agents managing agents)](#orchestration-shape-agents-managing-agents)
-- [Guardrails (non-negotiable — it edits itself)](#guardrails-non-negotiable--it-edits-itself)
-- [Running it](#running-it)
+A trusted root Codex orchestrator owns the run, campaign authority/focus manifest,
+opaque candidate token, checkpoint, and unique immutable output paths. It keeps
+these roles separated:
 
----
+- **Scout** performs read-only, campaign-scoped recon. `MONITOR_ONLY` stops after
+  recon and returns a resume trigger.
+- **Proposer** turns immutable scout/trial inputs into one evaluated, transferable
+  candidate; it does not modify guidance.
+- **Fresh verifier** receives only candidate brief, raw evidence, artifact pointers,
+  and diff package—not proposer justification or identity—and emits a verdict.
+- **Blind comparator** receives only identity-free `incumbent` and `challenger`
+  packages plus the opaque candidate token, then selects a winner or no-decision.
 
-## The two paths an insight enters the skill
+No role self-verifies, shares a mutable output path, promotes, submits, publishes,
+or changes canonical guidance. Parallelize independent scouts/trials only; serialize
+the shared GPU queue and all state transitions.
 
-1. **In-session (manual).** Mid-battle, Opus hits a measured "oh — *that's* what actually works" and writes it immediately (the CAPTURE rule). Fast, but only catches what one session noticed.
-2. **Curator (autonomous).** A scheduled agent re-reads the *whole* battle history across all competitions and extracts what the live sessions missed — especially **cross-competition patterns** that no single session can see. The "over-engineering past the peak = 6/8 comps" anti-pattern only became visible when an agent audited eight competitions at once. That is the curator's unique value: the aggregate prozrenie.
+The engine verifies structural provenance: declared role/worker separation, unique
+paths, source artifact types, hashes, UTC ordering, sealed payload equality, verifier
+bindings, and protected changed paths. It does **not** attest actual Codex
+fresh-context or worker identity, and it cannot prove semantic redaction inside
+arbitrary free text. Those are trusted-root-orchestrator responsibilities, not
+signed attestations.
 
-Both write to the same places (transferable → `grandmaster-playbook.md`; comp-specific → memory) under the same rule: **only what's measured.**
+## State and immutable storage
 
-## The curator loop
+The durable flow is:
 
-A headless agent (`scripts/skill_curator.sh`), on a schedule or on demand:
-
+```text
+OBSERVED -> EVALUATED -> VERIFIED -> PROMOTED
+                       \-> REJECTED
+PROMOTED -> ROLLED_BACK
 ```
-1. SCAN    — read fresh signal: kaggle competitions submissions for each active comp
-             (score JUMPS and DROPS + the technique in the submission description),
-             memory notes, results.csv. One scanner sub-agent per competition.
-2. EXTRACT — for each measured movement not yet reflected in the playbook, formulate
-             ONE transferable bullet: "date — [type] insight (evidence with the number)".
-3. DEDUPE  — barrier: gather all candidates, drop any already in Battle-proven additions,
-             and detect repeats (a pattern seen in a new comp bumps an anti-pattern counter).
-4. WRITE   — append the survivors to Battle-proven additions (newest first); update the
-             anti-pattern counts in SKILL.md if a known pattern recurred.
-5. SHIP    — repackage the .skill (must VALIDATE), commit to the skill repo with a clear
-             diff. The git history is the audit trail; a human can read or revert any edit.
+
+Observed scout/trial evidence becomes `EVALUATED` only after schema validation.
+Verification and comparison are gate inputs; a failed or stale gate appends a
+machine-readable `REJECTED` event without touching generated guidance. State lives
+outside the packaged skill by default:
+
+```text
+<workspace>/.dominator/evolution/
+  manifests/<run-id>.json
+  artifacts/<run-id>/...
+  evidence.jsonl
+  ledger.jsonl
+  promotions.jsonl
+  checkpoints/<run-id>.json
 ```
 
-The loop never invents — it only transcribes what the leaderboard already proved.
+Manifests, artifacts, evidence, ledger, promotions, and checkpoints are immutable
+or append-only. Every worker receives a distinct artifact path; aggregation reads
+sealed artifacts rather than editing them. The root orchestrator records completed
+work in a checkpoint, so a resumed run validates existing hashes/statuses and does
+not rerun completed compute.
 
-## Orchestration shape (agents managing agents)
+## Exact contracts
 
-The curator is an orchestrator, not a monolith:
+An evaluated candidate has exactly the engine evidence fields below (values must be
+finite where numeric and timestamps are timezone-aware UTC):
 
-- **Scanner agents** — one per active competition, dispatched in parallel (isolated context, the dispatch contract from `autonomous.md`). Each returns `{comp, [new score movements], technique, evidence}`. They're independent domains → genuine parallelism.
-- **Synthesizer** — a barrier after the scanners (it needs *all* findings to dedupe against the current playbook and to spot cross-comp repeats). It classifies transferable vs comp-specific, writes the bullets, bumps counters.
-- **Validator** — repackages and confirms the skill still validates before anything is committed.
+```json
+{
+  "candidate_id": "unique-stable-id",
+  "parent_id": "incumbent-id",
+  "competition": "competition-slug",
+  "competition_type": "tabular",
+  "claim": "one transferable measured claim",
+  "scope_limits": "where it applies and does not apply",
+  "metric": "auc",
+  "direction": "higher",
+  "metric_direction_verified": true,
+  "baseline_score": 0.951,
+  "candidate_score": 0.952,
+  "noise_floor": 0.0002,
+  "confirmations": 3,
+  "validation_regimes": ["folds-v1", "seeds-11-22-33"],
+  "code_sha": "sha256-or-git-sha",
+  "data_fingerprint": "sha256",
+  "config_hash": "sha256",
+  "seeds": [11, 22, 33],
+  "runtime_minutes": 120.0,
+  "runtime_ratio": 1.3,
+  "vram_gb": 16.0,
+  "artifacts": ["artifacts/run-1/oof.parquet"],
+  "regressions": [],
+  "forbidden_actions": [],
+  "changed_paths": ["references/learned-playbook.md"],
+  "transferable": true,
+  "status": "succeeded",
+  "created_at_utc": "2026-07-17T00:00:00Z"
+}
+```
 
-This mirrors the skill's own teaching: parallel where independent (scanners), barrier where you need the whole set (synthesis), diversity of inputs → a pattern no single view catches.
+The engine calculates improvement as `candidate - baseline` for `higher` and
+`baseline - candidate` for `lower`; public-leaderboard movement is supporting
+evidence, never enough by itself. The fresh verifier and blind comparator schemas
+are exactly:
 
-## Guardrails (non-negotiable — it edits itself)
+```json
+{"candidate_id":"unique-stable-id","verdict":"PASS","fresh_context":true,"reviewer_id":"verifier-worker","checked_artifacts":["artifacts/run-1/evidence.json"],"issues":[]}
+```
 
-An agent rewriting its own brain is the most dangerous thing in this skill. These are not optional:
+```json
+{"candidate_id":"unique-stable-id","winner":"challenger","blind":true,"rubric":{"score":5,"stability":5,"runtime":4,"reproducibility":5}}
+```
 
-- **Only measured facts.** A number, an LB movement, a confirmed mechanism. Never a hunch. If there's no evidence, it doesn't get written.
-- **Verify the metric DIRECTION before recording — by the leaderboard, not the submission description.** The first live curator run inverted neurogolf-2026: it assumed "lower=better" from a description and recorded that 6239 beat 6287, when the leaderboard top was 7795 (HIGHER=better) so 6287 was actually the stronger score — the insights were backwards. Before writing any "X beat Y" insight, confirm which way the metric runs by reading the leaderboard top vs bottom. Getting direction wrong silently records the opposite of the truth.
-- **Append-only to insights; never autonomously rewrite or delete existing rules.** The curator may *add* to Battle-proven additions and *increment* an anti-pattern counter. Changing the constitution, the iron rules, or any existing guidance is a **human** decision. Structural edits are out of scope for the loop.
-- **Never touch the `description`.** Triggering is critical and easy to break; the curator leaves frontmatter alone.
-- **Git is the audit trail.** Every self-edit is a separate commit with a readable diff. Prefer a PR over a direct push so a human reviews before merge; at minimum, a human can revert.
-- **Anti-bloat / consolidation.** Battle-proven additions has a soft cap (~25 bullets). When it overflows, the curator's job flips from *adding* to *consolidating* — merge several specific bullets into one general principle (still measured, citing the cases). The skill must get *sharper* over time, not just longer. A skill that only grows is a skill that rots.
-- **Validate before commit.** Run the packager's validation after every edit; never commit an invalid skill (e.g. a description pushed over the 1024-char limit by an unrelated edit).
-- **Idempotent.** Re-running the curator with no new battles changes nothing — it must recognize what it already wrote.
+Before a gate, the manifest registers exactly one proposer, verifier, and comparator
+with pairwise distinct worker IDs and outputs. Each registration has a SHA-256,
+UTC timestamp after the manifest, terminal status, and typed source inputs
+(`raw_evidence`, `artifact_pointer`, or `diff_package`, all with origin `source`).
+Verifier inputs cannot be proposer output or an alias; `reviewer_id` and
+`checked_artifacts` must match its registration. Comparator inputs are exactly the
+two sealed `incumbent`/`challenger` packages and contain no identity-bearing fields.
 
-## Running it
+## Deterministic promotion gate
 
-- **On demand:** `scripts/skill_curator.sh` — point it at your active competition slugs; it harvests, writes, validates, and commits.
-- **Scheduled:** `scripts/skill-curator.yml` (GitHub Actions) — runs weekly, opens a PR with that week's measured insights for you to merge. Needs the same secrets as `nightly-agent.yml` (`ANTHROPIC_API_KEY`) plus push/PR permission on the skill repo.
-- **The honest expectation:** most weeks it adds 0–2 lines, occasionally consolidates. That's success — the skill compounds slowly from real results, not from generated filler. If it ever wants to add ten bullets in a week, that's the bloat alarm, not a win.
+`PROMOTED` requires every condition below; otherwise append `REJECTED` and leave
+the learned playbook unchanged:
+
+1. Candidate `status` is `succeeded` and metric direction is explicitly verified.
+2. Direction-aware improvement is strictly greater than `noise_floor`.
+3. `confirmations >= 2`; a transferable claim has at least two distinct validation regimes.
+4. `regressions` and `forbidden_actions` are empty.
+5. Every changed path is exactly `references/learned-playbook.md`.
+6. `runtime_ratio <= 2.0`.
+7. The fresh verifier returns `PASS`, `fresh_context: true`, no issues, and registered checked artifacts.
+8. The comparator is blind and selects `challenger`.
+9. Sealed provenance is complete, unchanged, non-stale, correctly ordered, and role-separated.
+10. The candidate has not already been promoted and no other promotion occurred on that UTC date.
+
+Promotion appends a complete event with its evidence identifiers, then atomically
+renders active promotions into `references/learned-playbook.md`, ordered by
+promotion timestamp and candidate ID. Repeating the same request is idempotent.
+There is at most one promotion per UTC day.
+
+## Rollback and local commands
+
+On regression, append a `ROLLED_BACK` event referencing the `promotion_id` and a
+reason, then re-render. Never delete evidence or history. Resume from the latest
+checkpoint/ledger state rather than recreating past events or recomputing sealed
+artifacts.
+
+The legacy curator entry points are deliberately thin local forwarders:
+
+```text
+scripts/skill_curator.sh [engine arguments...]        -> python3 scripts/evolution.py
+scripts/curator_verify.sh [gate arguments...]         -> python3 scripts/evolution.py gate
+```
+
+Use `plan`, `record`, `gate`, `promote`, `rollback`, and `status` with local JSON
+artifacts. The bundled curator workflow is manual, `contents: read`, and validation
+only; it does not create commits, push, open/merge pull requests, use secrets, or
+run model/Kaggle/GitHub actions.

@@ -59,6 +59,15 @@ class SkillContractTests(unittest.TestCase):
         ):
             self.assertTrue((ROOT / relative).is_file(), relative)
 
+    def test_measured_self_improvement_routes_to_engine_references(self) -> None:
+        self.assertIn("references/self-improvement.md", self.text)
+        self.assertIn("references/learned-playbook.md", self.text)
+        learning_section = self.text.split("## Learning and self-improvement", 1)[1]
+        self.assertIn("automatic promotion", learning_section.lower())
+        self.assertIn("references/learned-playbook.md", learning_section)
+        for protected in ("SKILL.md", "frontmatter", "safety", "policy"):
+            self.assertIn(protected, learning_section)
+
     def test_old_skill_name_is_gone_from_runtime_files(self) -> None:
         runtime_files = [SKILL, *sorted((ROOT / "references").glob("*.md"))]
         runtime_files += sorted((ROOT / "scripts").glob("*"))

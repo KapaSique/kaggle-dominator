@@ -1,91 +1,21 @@
-# skill-curator.yml — GitHub Actions: the skill curates itself weekly, opens a PR for review.
-#
-# This wires the deepest iceberg level (self-improving loop / agent-built tooling) onto the
-# skill: a scheduled agent harvests MEASURED insights from your battles and proposes skill
-# edits as a PR you merge. It NEVER pushes self-edits straight to main — a human reviews.
-#
-# SETUP (you do this once — the agent never enters secrets itself):
-#   Repo (the skill repo) -> Settings -> Secrets and variables -> Actions:
-#     Secrets:   ANTHROPIC_API_KEY   (console.anthropic.com)
-#                KAGGLE_JSON         (contents of ~/.kaggle/kaggle.json — read-only use)
-#     Variables: COMP_SLUGS          (space-separated active competitions, e.g.
-#                                      "playground-series-s6e6 orbit-wars neurogolf-2026")
-#   Then copy this file to .github/workflows/skill-curator.yml
-#
-# Guardrails live in references/self-improvement.md: only measured facts, append-only to
-# insights, never touch the description, consolidate instead of bloat, validate before commit.
-name: skill-curator
+name: skill-curator-validation
 
 on:
-  schedule:
-    - cron: "0 6 * * 1"    # Mondays 06:00 UTC — weekly harvest
-  workflow_dispatch: {}     # plus a manual "Run workflow" button
+  workflow_dispatch: {}
 
 permissions:
-  contents: write
-  pull-requests: write       # opens a PR for human review, does not push to main
+  contents: read
 
 jobs:
-  curate:
+  validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Install CLIs
+      - name: Validate local evolution contract
         run: |
-          npm install -g @anthropic-ai/claude-code
-          pip install --quiet kaggle
-
-      - name: Configure Kaggle (read-only)
-        env:
-          KAGGLE_JSON: ${{ secrets.KAGGLE_JSON }}
-        run: |
-          mkdir -p ~/.kaggle
-          printf '%s' "$KAGGLE_JSON" > ~/.kaggle/kaggle.json
-          chmod 600 ~/.kaggle/kaggle.json
-
-      - name: Run curator (harvest measured insights)
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          chmod +x scripts/skill_curator.sh
-          # The repo root IS the skill dir here; the curator edits in place.
-          ./scripts/skill_curator.sh . pokemon-tcg-ai-battle pokemon-tcg-ai-battle-challenge-strategy || true
-
-      - name: Open PR + verified auto-merge (agents-managing-agents)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          if [ -z "$(git status --porcelain)" ]; then
-            echo "No change — skill already reflects the battles."; exit 0
-          fi
-          # Unique branch per run avoids the "fetch first" rejection on same-day re-runs.
-          BR="curator/$(date -u +%F)-${{ github.run_id }}"
-          git config user.name  "skill-curator"
-          git config user.email "actions@users.noreply.github.com"
-          git checkout -b "$BR"
-          git add -A
-          git commit -m "curator: measured insights $(date -u +%F)"
-          git push -u origin "$BR"
-          gh pr create --fill --base main --head "$BR" \
-            --title "Curator: measured insights $(date -u +%F)" \
-            --body "Autonomous harvest of MEASURED battle insights. An independent verifier gates auto-merge; if it could not confirm the evidence this PR is left open with the needs-human label." || true
-
-          # Independent fresh-context verifier decides auto-merge vs human review.
-          chmod +x scripts/curator_verify.sh
-          VOUT=$(./scripts/curator_verify.sh || true)
-          echo "$VOUT"
-          if echo "$VOUT" | grep -q "GUARD=PASS"; then
-            git fetch origin main
-            gh pr merge "$BR" --squash --delete-branch && echo "AUTO-MERGED: verifier passed guardrails."
-          else
-            gh pr edit "$BR" --add-label "needs-human" 2>/dev/null || \
-              gh pr comment "$BR" --body "Verifier did NOT confirm guardrails — human review required before merge." || true
-            echo "LEFT FOR HUMAN: verifier flagged the change."
-          fi
+          python3 -m py_compile scripts/evolution.py
+          bash -n scripts/skill_curator.sh scripts/curator_verify.sh
+          python3 scripts/evolution.py status

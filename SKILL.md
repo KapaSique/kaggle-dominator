@@ -221,7 +221,7 @@ Open only the references needed for the current bottleneck:
 | Agents, games, ladders, noisy ratings | `references/simulation.md` |
 | Code competitions and judged hackathons | `references/code-and-hackathon.md` |
 | Unattended bounded loops | `references/autonomous.md` |
-| Measured skill self-curation | `references/self-improvement.md` |
+| Measured skill self-improvement | `references/self-improvement.md` and `references/learned-playbook.md` |
 | ML craft checklists | `references/learning-craft.md` |
 | Public resources, attribution, licenses | `references/resources.md` |
 | Reusable winning solution structures | `references/winning-solutions.md` |
@@ -248,11 +248,13 @@ Persist an insight only when it has measured evidence and likely transfers:
 
 `date — competition type — claim — evidence — scope/limits`
 
-Append cross-domain lessons to `references/grandmaster-playbook.md` or the relevant
-type reference. Consolidate duplicates; do not let the skill become a raw log.
-Record competition-specific recipes and scores in that campaign's workspace. The
-self-curator may propose changes, but it must not autonomously weaken compliance,
-authority, evidence, or `BEST_KNOWN` safeguards.
+For measured self-improvement, read `references/self-improvement.md` for the
+evidence-gated orchestration contract and `references/learned-playbook.md` for
+the generated, currently promoted guidance. Record competition-specific recipes
+and scores in that campaign's workspace. Automatic promotion may update only
+`references/learned-playbook.md`; it must never change `SKILL.md`, frontmatter,
+safety, policy, authority, evidence, or `BEST_KNOWN` safeguards. All external
+actions remain approval-only.
 
 ## Definition of done
 
