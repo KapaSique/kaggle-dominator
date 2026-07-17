@@ -54,5 +54,7 @@ artifact paths, UTC timestamps, and exactly this machine-readable JSON schema:
 ```
 
 `status` is terminal: `succeeded`, `rejected`, or `stale`. `artifacts` contains
-the immutable artifact paths. Never self-verify this evidence or attach a
+the immutable artifact paths. Register this sealed output with its SHA-256,
+UTC timestamp, role+worker identity, and declared input artifact hashes before
+any gate can consume it. Never self-verify this evidence or attach a
 self-justification for the verifier.

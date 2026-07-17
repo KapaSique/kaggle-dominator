@@ -1,5 +1,6 @@
 import contextlib
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import importlib.util
 import io
 import json
@@ -79,6 +80,85 @@ def passing_comparator(candidate_id: str = "cand-1") -> dict:
             "runtime": 4,
             "reproducibility": 5,
         },
+    }
+
+
+def write_json_artifact(root: Path, relative_path: str, payload: dict) -> tuple[str, str]:
+    """Create a test artifact and return its relative path and content digest."""
+    destination = root / relative_path
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return relative_path, hashlib.sha256(destination.read_bytes()).hexdigest()
+
+
+def provenance_manifest(
+    root: Path,
+    candidate_id: str = "cand-1",
+    verifier: dict | None = None,
+    comparator: dict | None = None,
+    evidence: dict | None = None,
+) -> dict:
+    """Create a complete immutable provenance envelope for promotion tests."""
+    verifier = verifier or passing_verifier(candidate_id)
+    comparator = comparator or passing_comparator(candidate_id)
+    evidence = evidence or valid_evidence() | {"candidate_id": candidate_id}
+    run_id = f"run-{candidate_id}"
+    evidence_path, evidence_hash = write_json_artifact(
+        root, f"artifacts/{run_id}/raw-evidence.json", evidence
+    )
+    incumbent_path, incumbent_hash = write_json_artifact(
+        root, f"artifacts/{run_id}/blind-incumbent.json", {"score": 0.951}
+    )
+    challenger_path, challenger_hash = write_json_artifact(
+        root, f"artifacts/{run_id}/blind-challenger.json", {"score": 0.952}
+    )
+    proposer_path, proposer_hash = write_json_artifact(
+        root, f"artifacts/{run_id}/proposer.json", evidence
+    )
+    verifier_path, verifier_hash = write_json_artifact(
+        root, f"artifacts/{run_id}/verifier.json", verifier
+    )
+    comparator_path, comparator_hash = write_json_artifact(
+        root, f"artifacts/{run_id}/comparator.json", comparator
+    )
+    comparator_inputs = [
+        {"label": "incumbent", "path": incumbent_path, "sha256": incumbent_hash},
+        {"label": "challenger", "path": challenger_path, "sha256": challenger_hash},
+    ]
+    return {
+        "run_id": run_id,
+        "candidate_id": candidate_id,
+        "created_at_utc": "2026-07-17T00:00:00Z",
+        "artifacts": [
+            {
+                "role": "proposer",
+                "worker_id": "proposer-1",
+                "output_path": proposer_path,
+                "sha256": proposer_hash,
+                "created_at_utc": "2026-07-17T00:00:00Z",
+                "terminal_status": evidence["status"],
+                "input_artifacts": [{"path": evidence_path, "sha256": evidence_hash}],
+            },
+            {
+                "role": "verifier",
+                "worker_id": "verifier-1",
+                "output_path": verifier_path,
+                "sha256": verifier_hash,
+                "created_at_utc": "2026-07-17T00:01:00Z",
+                "terminal_status": "PASS",
+                "input_artifacts": [{"path": evidence_path, "sha256": evidence_hash}],
+            },
+            {
+                "role": "comparator",
+                "worker_id": "comparator-1",
+                "output_path": comparator_path,
+                "sha256": comparator_hash,
+                "created_at_utc": "2026-07-17T00:02:00Z",
+                "terminal_status": "challenger",
+                "input_artifacts": comparator_inputs,
+            },
+        ],
+        "comparator_package": {"candidate_token": candidate_id, "inputs": comparator_inputs},
     }
 
 
@@ -236,6 +316,113 @@ class EvolutionStoreTests(unittest.TestCase):
         self.assertEqual(status["evidence_count"], 1)
 
 
+class EvolutionProvenanceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        root = Path(self.temp_dir.name)
+        self.state_dir = root / "state"
+        self.store = EvolutionStore(self.state_dir, root / "skill")
+
+    def test_valid_separated_registered_artifacts_pass_gate(self) -> None:
+        self.store.record_evidence(valid_evidence())
+        manifest = provenance_manifest(self.state_dir)
+        self.store.save_manifest(manifest)
+
+        result = self.store.gate_candidate("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertTrue(result.passed)
+
+    def test_bare_fresh_and_blind_booleans_cannot_bypass_provenance(self) -> None:
+        self.store.record_evidence(valid_evidence())
+
+        result = self.store.gate_candidate("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertFalse(result.passed)
+        self.assertIn("provenance_manifest_missing", result.reasons)
+
+    def test_manifest_rejects_same_worker_for_proposer_and_verifier(self) -> None:
+        manifest = provenance_manifest(self.state_dir)
+        manifest["artifacts"][1]["worker_id"] = "proposer-1"
+
+        with self.assertRaisesRegex(EvolutionError, "worker"):
+            self.store.save_manifest(manifest)
+
+    def test_manifest_rejects_shared_output_path(self) -> None:
+        manifest = provenance_manifest(self.state_dir)
+        manifest["artifacts"][2]["output_path"] = manifest["artifacts"][0]["output_path"]
+
+        with self.assertRaisesRegex(EvolutionError, "output_path"):
+            self.store.save_manifest(manifest)
+
+    def test_manifest_rejects_verifier_input_from_proposer_output(self) -> None:
+        manifest = provenance_manifest(self.state_dir)
+        proposer = manifest["artifacts"][0]
+        manifest["artifacts"][1]["input_artifacts"] = [
+            {"path": proposer["output_path"], "sha256": proposer["sha256"]}
+        ]
+
+        with self.assertRaisesRegex(EvolutionError, "verifier.*proposer"):
+            self.store.save_manifest(manifest)
+
+    def test_manifest_rejects_missing_hash_or_utc_timestamp(self) -> None:
+        for field, value in (("sha256", ""), ("created_at_utc", "not-a-timestamp")):
+            with self.subTest(field=field):
+                manifest = provenance_manifest(self.state_dir)
+                manifest["artifacts"][1][field] = value
+                with self.assertRaises(EvolutionError):
+                    self.store.save_manifest(manifest)
+
+    def test_gate_rejects_output_that_no_longer_matches_registered_hash(self) -> None:
+        self.store.record_evidence(valid_evidence())
+        manifest = provenance_manifest(self.state_dir)
+        self.store.save_manifest(manifest)
+        verifier_path = self.state_dir / manifest["artifacts"][1]["output_path"]
+        verifier_path.write_text(json.dumps({**passing_verifier(), "fresh_context": False}), encoding="utf-8")
+
+        result = self.store.gate_candidate("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertFalse(result.passed)
+        self.assertIn("verifier_provenance_invalid", result.reasons)
+
+    def test_gate_rejects_registered_proposer_for_a_different_evidence_object(self) -> None:
+        self.store.record_evidence(valid_evidence())
+        manifest = provenance_manifest(self.state_dir)
+        substituted = valid_evidence()
+        substituted["claim"] = "A different measured claim."
+        _, proposer_hash = write_json_artifact(
+            self.state_dir, manifest["artifacts"][0]["output_path"], substituted
+        )
+        manifest["artifacts"][0]["sha256"] = proposer_hash
+        self.store.save_manifest(manifest)
+
+        result = self.store.gate_candidate("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertFalse(result.passed)
+        self.assertIn("proposer_provenance_mismatch", result.reasons)
+
+    def test_manifest_rejects_identity_leakage_or_a_b_comparator_package(self) -> None:
+        for package in (
+            {
+                "candidate_token": "cand-1",
+                "inputs": [
+                    {"label": "A", "path": "artifacts/a.json", "sha256": "a" * 64},
+                    {"label": "B", "path": "artifacts/b.json", "sha256": "b" * 64},
+                ],
+            },
+            {
+                "candidate_token": "cand-1",
+                "model_author": "leaked",
+                "inputs": [],
+            },
+        ):
+            with self.subTest(package=package):
+                manifest = provenance_manifest(self.state_dir)
+                manifest["comparator_package"] = package
+                with self.assertRaises(EvolutionError):
+                    self.store.save_manifest(manifest)
+
+
 class EvolutionPromotionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -253,7 +440,11 @@ class EvolutionPromotionTests(unittest.TestCase):
         evidence = valid_evidence()
         evidence["candidate_id"] = candidate_id
         evidence.update(changes)
-        return self.store.record_evidence(evidence)
+        record = self.store.record_evidence(evidence)
+        self.store.save_manifest(
+            provenance_manifest(self.state_dir, candidate_id, evidence=evidence)
+        )
+        return record
 
     def gate(self, candidate_id: str = "cand-1", **changes: object) -> object:
         self.record(candidate_id, **changes)
@@ -742,9 +933,11 @@ class EvolutionPromotionTests(unittest.TestCase):
         first = EvolutionStore(self.state_dir, self.skill_root)
         second = EvolutionStore(self.state_dir, self.skill_root)
         first.record_evidence(valid_evidence())
+        first.save_manifest(provenance_manifest(self.state_dir))
         second_evidence = valid_evidence()
         second_evidence["candidate_id"] = "cand-2"
         second.record_evidence(second_evidence)
+        second.save_manifest(provenance_manifest(self.state_dir, "cand-2", evidence=second_evidence))
         barrier = threading.Barrier(2)
         original = EvolutionStore._promotion_occurred_today
 
@@ -896,6 +1089,7 @@ class EvolutionCliTests(unittest.TestCase):
             common = ["--root", str(state_dir), "--skill-root", str(root / "skill")]
 
             self.assertEqual(evolution.main([*common, "record", str(evidence_path)]), 0)
+            EvolutionStore(state_dir, root / "skill").save_manifest(provenance_manifest(state_dir))
             gate_output = io.StringIO()
             with contextlib.redirect_stdout(gate_output):
                 self.assertEqual(

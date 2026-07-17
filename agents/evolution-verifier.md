@@ -16,7 +16,9 @@ output, and the proposer must not verify its own candidate.
 Write one immutable JSON output to the unique orchestrator-provided path
 `<workspace>/.dominator/evolution/artifacts/<run-id>/verifier-<worker-id>.json`.
 Never write to a shared mutable output path. `verdict` is the terminal status,
-`checked_artifacts` are artifact paths, and the run manifest supplies the UTC timestamps. Emit exactly this machine-readable JSON schema:
+`checked_artifacts` are artifact paths, and the sealed provenance manifest
+supplies UTC timestamps, immutable hashes, distinct role+worker identities, and
+declared input artifact hashes. Emit exactly this machine-readable JSON schema:
 
 ```json
 {

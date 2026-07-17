@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from datetime import datetime, timezone
 import fcntl
+import hashlib
 import json
 import math
 import os
@@ -96,9 +97,44 @@ STRING_LIST_EVIDENCE_FIELDS = frozenset(
 )
 
 RUN_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
+SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 ALLOWED_PROMOTION_PATH = "references/learned-playbook.md"
 MAX_RUNTIME_RATIO = 2.0
 MIN_CONFIRMATIONS = 2
+PROVENANCE_ROLES = frozenset({"proposer", "verifier", "comparator"})
+PROVENANCE_MANIFEST_FIELDS = frozenset(
+    {"run_id", "candidate_id", "created_at_utc", "artifacts", "comparator_package"}
+)
+PROVENANCE_ARTIFACT_FIELDS = frozenset(
+    {
+        "role",
+        "worker_id",
+        "output_path",
+        "sha256",
+        "created_at_utc",
+        "terminal_status",
+        "input_artifacts",
+    }
+)
+VERIFICATION_OUTPUT_FIELDS = frozenset(
+    {"candidate_id", "verdict", "fresh_context", "reviewer_id", "checked_artifacts", "issues"}
+)
+COMPARATOR_OUTPUT_FIELDS = frozenset({"candidate_id", "winner", "blind", "rubric"})
+IDENTITY_LEAKAGE_KEYS = frozenset(
+    {
+        "author",
+        "model",
+        "model_id",
+        "model_name",
+        "proposer",
+        "proposer_id",
+        "identity",
+        "candidate_id",
+        "incumbent_id",
+        "challenger_id",
+        "requested_winner",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -187,6 +223,133 @@ def _normalize_timestamps(payload: Any) -> Any:
     return payload
 
 
+def _required_nonempty_string(payload: dict, field: str, context: str) -> str:
+    value = payload.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise EvolutionError(f"{context}.{field} must be a non-empty string")
+    return value
+
+
+def _validate_relative_artifact_path(value: object, context: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise EvolutionError(f"{context}.path must be a non-empty string")
+    path = Path(value)
+    if path.is_absolute() or ".." in path.parts or path.parts[:1] != ("artifacts",):
+        raise EvolutionError(f"{context}.path must be a safe artifacts-relative path")
+    return value
+
+
+def _validate_sha256(value: object, context: str) -> str:
+    if not isinstance(value, str) or not SHA256_PATTERN.fullmatch(value):
+        raise EvolutionError(f"{context}.sha256 must be a lowercase SHA-256 digest")
+    return value
+
+
+def _validate_input_reference(reference: object, context: str, *, labelled: bool) -> dict:
+    if not isinstance(reference, dict):
+        raise EvolutionError(f"{context} must be an object")
+    expected = {"path", "sha256"} | ({"label"} if labelled else set())
+    if set(reference) != expected:
+        raise EvolutionError(f"{context} has an invalid field set")
+    if labelled:
+        label = reference["label"]
+        if label not in {"incumbent", "challenger"}:
+            raise EvolutionError(f"{context}.label must be incumbent or challenger")
+    _validate_relative_artifact_path(reference["path"], context)
+    _validate_sha256(reference["sha256"], context)
+    return reference
+
+
+def _contains_identity_leakage(value: object) -> bool:
+    if isinstance(value, dict):
+        return any(
+            key in IDENTITY_LEAKAGE_KEYS or _contains_identity_leakage(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_identity_leakage(item) for item in value)
+    return False
+
+
+def validate_provenance_manifest(manifest: dict) -> None:
+    """Validate the immutable envelope binding agents to their registered outputs."""
+    if not isinstance(manifest, dict):
+        raise EvolutionError("manifest must be an object")
+    if set(manifest) != PROVENANCE_MANIFEST_FIELDS:
+        raise EvolutionError("provenance manifest has an invalid field set")
+    run_id = _required_nonempty_string(manifest, "run_id", "manifest")
+    if not RUN_ID_PATTERN.fullmatch(run_id):
+        raise EvolutionError("manifest.run_id must be a safe non-empty identifier")
+    candidate_id = _required_nonempty_string(manifest, "candidate_id", "manifest")
+    _normalize_utc(manifest["created_at_utc"])
+    artifacts = manifest["artifacts"]
+    if not isinstance(artifacts, list) or len(artifacts) != len(PROVENANCE_ROLES):
+        raise EvolutionError("manifest.artifacts must register exactly three role artifacts")
+    by_role: dict[str, dict] = {}
+    worker_ids: set[str] = set()
+    output_paths: set[str] = set()
+    manifest_time = _normalize_utc(manifest["created_at_utc"])
+    for index, artifact in enumerate(artifacts, start=1):
+        context = f"manifest.artifacts[{index}]"
+        if not isinstance(artifact, dict) or set(artifact) != PROVENANCE_ARTIFACT_FIELDS:
+            raise EvolutionError(f"{context} has an invalid field set")
+        role = artifact.get("role")
+        if role not in PROVENANCE_ROLES or role in by_role:
+            raise EvolutionError(f"{context}.role must be a unique registered role")
+        worker_id = _required_nonempty_string(artifact, "worker_id", context)
+        if worker_id in worker_ids:
+            raise EvolutionError("manifest worker IDs must be separated by role")
+        output_path = _validate_relative_artifact_path(artifact.get("output_path"), context)
+        if output_path in output_paths:
+            raise EvolutionError("manifest output_path values must be unique")
+        _validate_sha256(artifact.get("sha256"), context)
+        artifact_time = _normalize_utc(artifact.get("created_at_utc"))
+        if artifact_time < manifest_time:
+            raise EvolutionError(f"{context}.created_at_utc predates the run manifest")
+        input_artifacts = artifact.get("input_artifacts")
+        if not isinstance(input_artifacts, list) or not input_artifacts:
+            raise EvolutionError(f"{context}.input_artifacts must be a non-empty list")
+        labelled = role == "comparator"
+        for input_index, reference in enumerate(input_artifacts, start=1):
+            _validate_input_reference(
+                reference, f"{context}.input_artifacts[{input_index}]", labelled=labelled
+            )
+        status = artifact.get("terminal_status")
+        allowed_statuses = {
+            "proposer": {"succeeded", "failed", "rejected", "stale"},
+            "verifier": {"PASS", "FAIL", "STALE"},
+            "comparator": {"challenger", "incumbent", "no-decision"},
+        }[role]
+        if status not in allowed_statuses:
+            raise EvolutionError(f"{context}.terminal_status is invalid for {role}")
+        by_role[role] = artifact
+        worker_ids.add(worker_id)
+        output_paths.add(output_path)
+    if set(by_role) != PROVENANCE_ROLES:
+        raise EvolutionError("manifest must register proposer, verifier, and comparator")
+    proposer_output = by_role["proposer"]["output_path"]
+    if any(
+        reference["path"] == proposer_output
+        for reference in by_role["verifier"]["input_artifacts"]
+    ):
+        raise EvolutionError("verifier input must not include proposer output or justification")
+
+    package = manifest.get("comparator_package")
+    if not isinstance(package, dict) or set(package) != {"candidate_token", "inputs"}:
+        raise EvolutionError("manifest.comparator_package has an invalid field set")
+    if package.get("candidate_token") != candidate_id:
+        raise EvolutionError("comparator package token must match the opaque candidate token")
+    package_inputs = package.get("inputs")
+    if not isinstance(package_inputs, list) or len(package_inputs) != 2:
+        raise EvolutionError("comparator package must contain incumbent and challenger packages")
+    for index, reference in enumerate(package_inputs, start=1):
+        _validate_input_reference(reference, f"manifest.comparator_package.inputs[{index}]", labelled=True)
+    if {reference["label"] for reference in package_inputs} != {"incumbent", "challenger"}:
+        raise EvolutionError("comparator package labels must be incumbent and challenger")
+    if package_inputs != by_role["comparator"]["input_artifacts"]:
+        raise EvolutionError("comparator input registration must equal the sealed comparator package")
+
+
 def _is_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
@@ -269,6 +432,122 @@ class EvolutionStore:
     def _learned_playbook_path(self) -> Path:
         return self.skill_root / ALLOWED_PROMOTION_PATH
 
+    def _artifact_path(self, relative_path: str) -> Path:
+        """Return a safe, non-symlinked runtime artifact path."""
+        _validate_relative_artifact_path(relative_path, "artifact")
+        try:
+            self.root.mkdir(parents=True, exist_ok=True)
+            root = self.root.resolve(strict=True)
+        except OSError as error:
+            raise EvolutionError(f"cannot access evolution artifact root: {error}") from error
+        path = self.root / relative_path
+        if path.is_symlink() or not path.is_file():
+            raise EvolutionError(f"registered artifact is missing or unsafe: {relative_path}")
+        try:
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(root)
+        except (OSError, ValueError) as error:
+            raise EvolutionError(f"registered artifact escapes evolution root: {relative_path}") from error
+        return resolved
+
+    def _read_registered_reference(self, reference: dict, context: str) -> dict:
+        path = self._artifact_path(reference["path"])
+        try:
+            raw = path.read_bytes()
+        except OSError as error:
+            raise EvolutionError(f"cannot read registered artifact {reference['path']}: {error}") from error
+        digest = hashlib.sha256(raw).hexdigest()
+        if digest != reference["sha256"]:
+            raise EvolutionError(f"registered artifact digest mismatch: {context}")
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise EvolutionError(f"registered artifact is not JSON: {context}") from error
+        if not isinstance(payload, dict):
+            raise EvolutionError(f"registered artifact must contain a JSON object: {context}")
+        return payload
+
+    def _validate_registered_artifacts(self, manifest: dict) -> dict[str, dict]:
+        """Verify sealed outputs, their declared inputs, and role-specific schemas."""
+        payloads: dict[str, dict] = {}
+        for artifact in manifest["artifacts"]:
+            role = artifact["role"]
+            for index, reference in enumerate(artifact["input_artifacts"], start=1):
+                input_payload = self._read_registered_reference(
+                    reference, f"{role}.input_artifacts[{index}]"
+                )
+                if role == "comparator" and _contains_identity_leakage(input_payload):
+                    raise EvolutionError("comparator package contains identity leakage")
+            payload = self._read_registered_reference(
+                {"path": artifact["output_path"], "sha256": artifact["sha256"]},
+                f"{role}.output",
+            )
+            if payload.get("candidate_id") != manifest["candidate_id"]:
+                raise EvolutionError(f"{role} output candidate token does not match manifest")
+            status_field = {"proposer": "status", "verifier": "verdict", "comparator": "winner"}[role]
+            if payload.get(status_field) != artifact["terminal_status"]:
+                raise EvolutionError(f"{role} output terminal status does not match manifest")
+            if role == "proposer":
+                validate_evidence(payload)
+            elif role == "verifier":
+                if set(payload) != VERIFICATION_OUTPUT_FIELDS:
+                    raise EvolutionError("verifier output has an invalid field set")
+            else:
+                if set(payload) != COMPARATOR_OUTPUT_FIELDS:
+                    raise EvolutionError("comparator output has an invalid field set")
+                if payload.get("blind") is not True:
+                    raise EvolutionError("comparator output is not blind")
+            payloads[role] = payload
+        return payloads
+
+    def _provenance_manifest_for(self, candidate_id: str) -> dict | None:
+        manifests_dir = self.root / "manifests"
+        if not manifests_dir.exists():
+            return None
+        matching: list[dict] = []
+        for path in sorted(manifests_dir.glob("*.json")):
+            payload = read_json(path)
+            if payload.get("candidate_id") == candidate_id:
+                matching.append(payload)
+        if not matching:
+            return None
+        if len(matching) != 1:
+            raise EvolutionError("multiple provenance manifests match candidate")
+        validate_provenance_manifest(matching[0])
+        return matching[0]
+
+    def _provenance_reasons(
+        self,
+        candidate_id: str,
+        evidence: dict,
+        verification: object,
+        comparison: object,
+    ) -> list[str]:
+        try:
+            manifest = self._provenance_manifest_for(candidate_id)
+        except EvolutionError:
+            return ["provenance_manifest_invalid"]
+        if manifest is None:
+            return ["provenance_manifest_missing"]
+        try:
+            payloads = self._validate_registered_artifacts(manifest)
+        except EvolutionError as error:
+            message = str(error)
+            if message.startswith("verifier") or "verifier" in message:
+                return ["verifier_provenance_invalid"]
+            if message.startswith("comparator") or "comparator" in message:
+                return ["comparator_provenance_invalid"]
+            return ["provenance_artifact_invalid"]
+        reasons: list[str] = []
+        if payloads["verifier"] != verification:
+            reasons.append("verifier_provenance_mismatch")
+        if payloads["comparator"] != comparison:
+            reasons.append("comparator_provenance_mismatch")
+        expected_evidence = {key: value for key, value in evidence.items() if key != "state"}
+        if payloads["proposer"] != expected_evidence:
+            reasons.append("proposer_provenance_mismatch")
+        return reasons
+
     def save_manifest(self, manifest: dict) -> Path:
         """Persist a run manifest under its stable run identifier."""
         if not isinstance(manifest, dict):
@@ -277,6 +556,9 @@ class EvolutionStore:
         if not isinstance(run_id, str) or not RUN_ID_PATTERN.fullmatch(run_id):
             raise EvolutionError("manifest.run_id must be a safe non-empty identifier")
         normalized = _normalize_timestamps(manifest)
+        if "candidate_id" in normalized:
+            validate_provenance_manifest(normalized)
+            self._validate_registered_artifacts(normalized)
         try:
             encoded = json.dumps(normalized, indent=2, sort_keys=True, allow_nan=False) + "\n"
         except (TypeError, ValueError) as error:
@@ -560,6 +842,8 @@ class EvolutionStore:
             reasons.append("protected_path_changed")
         if evidence["runtime_ratio"] > MAX_RUNTIME_RATIO:
             reasons.append("runtime_ratio_exceeded")
+
+        reasons.extend(self._provenance_reasons(candidate_id, evidence, verification, comparison))
 
         if not isinstance(verification, dict):
             reasons.append("verifier_invalid")
