@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,6 +85,72 @@ class EvolutionStoreTests(unittest.TestCase):
         self.assertEqual(len(read_jsonl(self.state_dir / "evidence.jsonl")), 1)
         self.assertEqual(len(read_jsonl(self.state_dir / "ledger.jsonl")), 2)
 
+    def test_list_direction_raises_evolution_error(self) -> None:
+        evidence = valid_evidence()
+        evidence["direction"] = ["higher"]
+
+        with self.assertRaises(EvolutionError):
+            evolution.validate_evidence(evidence)
+
+    def test_retry_after_first_ledger_failure_repairs_both_events(self) -> None:
+        original_append = evolution.append_jsonl
+        ledger_attempts = 0
+
+        def fail_first_ledger_append(path: Path, payload: dict) -> None:
+            nonlocal ledger_attempts
+            if path == self.state_dir / "ledger.jsonl":
+                ledger_attempts += 1
+                if ledger_attempts == 1:
+                    raise EvolutionError("injected first ledger append failure")
+            original_append(path, payload)
+
+        with patch.object(evolution, "append_jsonl", side_effect=fail_first_ledger_append):
+            with self.assertRaises(EvolutionError):
+                self.store.record_evidence(valid_evidence())
+
+        self.assertEqual(len(read_jsonl(self.state_dir / "evidence.jsonl")), 1)
+        self.assertEqual(read_jsonl(self.state_dir / "ledger.jsonl"), [])
+
+        self.store.record_evidence(valid_evidence())
+
+        self.assertEqual(len(read_jsonl(self.state_dir / "evidence.jsonl")), 1)
+        self.assertEqual(
+            [event["event"] for event in read_jsonl(self.state_dir / "ledger.jsonl")],
+            ["OBSERVED", "EVALUATED"],
+        )
+        self.assertEqual(self.store.latest_state("cand-1"), "EVALUATED")
+
+    def test_retry_after_second_ledger_failure_repairs_only_evaluated_event(self) -> None:
+        original_append = evolution.append_jsonl
+        ledger_attempts = 0
+
+        def fail_second_ledger_append(path: Path, payload: dict) -> None:
+            nonlocal ledger_attempts
+            if path == self.state_dir / "ledger.jsonl":
+                ledger_attempts += 1
+                if ledger_attempts == 2:
+                    raise EvolutionError("injected second ledger append failure")
+            original_append(path, payload)
+
+        with patch.object(evolution, "append_jsonl", side_effect=fail_second_ledger_append):
+            with self.assertRaises(EvolutionError):
+                self.store.record_evidence(valid_evidence())
+
+        self.assertEqual(len(read_jsonl(self.state_dir / "evidence.jsonl")), 1)
+        self.assertEqual(
+            [event["event"] for event in read_jsonl(self.state_dir / "ledger.jsonl")],
+            ["OBSERVED"],
+        )
+
+        self.store.record_evidence(valid_evidence())
+
+        self.assertEqual(len(read_jsonl(self.state_dir / "evidence.jsonl")), 1)
+        self.assertEqual(
+            [event["event"] for event in read_jsonl(self.state_dir / "ledger.jsonl")],
+            ["OBSERVED", "EVALUATED"],
+        )
+        self.assertEqual(self.store.latest_state("cand-1"), "EVALUATED")
+
     def test_save_manifest_copies_normalized_manifest_under_run_id(self) -> None:
         manifest = {
             "run_id": "run-2026-07-17",
@@ -138,13 +205,36 @@ class EvolutionCliTests(unittest.TestCase):
             evidence_path.write_text(json.dumps(valid_evidence()), encoding="utf-8")
             common = ["--root", str(state_dir), "--skill-root", str(skill_root)]
 
-            self.assertEqual(evolution.main([*common, "plan", str(manifest_path)]), 0)
-            self.assertEqual(evolution.main([*common, "record", str(evidence_path)]), 0)
-            output = io.StringIO()
-            with contextlib.redirect_stdout(output):
+            plan_output = io.StringIO()
+            with contextlib.redirect_stdout(plan_output):
+                self.assertEqual(evolution.main([*common, "plan", str(manifest_path)]), 0)
+            record_output = io.StringIO()
+            with contextlib.redirect_stdout(record_output):
+                self.assertEqual(evolution.main([*common, "record", str(evidence_path)]), 0)
+            status_output = io.StringIO()
+            with contextlib.redirect_stdout(status_output):
                 self.assertEqual(evolution.main([*common, "status"]), 0)
 
-            self.assertIn('"cand-1": "EVALUATED"', output.getvalue())
+            self.assertIn('"manifest"', plan_output.getvalue())
+            self.assertIn('"state": "EVALUATED"', record_output.getvalue())
+            self.assertIn('"cand-1": "EVALUATED"', status_output.getvalue())
+
+    def test_record_cli_rejects_list_direction_without_raw_type_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = valid_evidence()
+            evidence["direction"] = ["higher"]
+            evidence_path = root / "invalid-evidence.json"
+            evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+            stderr = io.StringIO()
+
+            with contextlib.redirect_stderr(stderr):
+                result = evolution.main(
+                    ["--root", str(root / "state"), "record", str(evidence_path)]
+                )
+
+            self.assertEqual(result, 2)
+            self.assertIn("evolution error: evidence.direction", stderr.getvalue())
 
 
 if __name__ == "__main__":

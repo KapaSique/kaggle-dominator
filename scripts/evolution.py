@@ -182,7 +182,10 @@ def validate_evidence(evidence: dict) -> None:
         value = evidence[field]
         if not isinstance(value, str) or not value.strip():
             raise EvolutionError(f"evidence.{field} must be a non-empty string")
-    if evidence["direction"] not in {"higher", "lower"}:
+    if not isinstance(evidence["direction"], str) or evidence["direction"] not in {
+        "higher",
+        "lower",
+    }:
         raise EvolutionError("evidence.direction must be 'higher' or 'lower'")
     for field in NUMBER_EVIDENCE_FIELDS:
         if not _is_number(evidence[field]):
@@ -256,26 +259,48 @@ class EvolutionStore:
 
     def record_evidence(self, evidence: dict) -> dict:
         """Record evidence once, followed by its OBSERVED and EVALUATED events."""
+        candidate_id = evidence.get("candidate_id") if isinstance(evidence, dict) else None
+        if isinstance(candidate_id, str):
+            for existing in read_jsonl(self._evidence_path):
+                if existing.get("candidate_id") == candidate_id:
+                    immutable_evidence = {
+                        key: value for key, value in existing.items() if key != "state"
+                    }
+                    validate_evidence(immutable_evidence)
+                    if existing.get("state") != "EVALUATED":
+                        raise EvolutionError(
+                            f"stored evidence for {candidate_id!r} has an invalid state"
+                        )
+                    self._repair_evaluated_events(candidate_id)
+                    return existing
+
         validate_evidence(evidence)
         normalized = _normalize_timestamps(evidence)
         candidate_id = normalized["candidate_id"]
-        for existing in read_jsonl(self._evidence_path):
-            if existing.get("candidate_id") == candidate_id:
-                return existing
-
         record = {**normalized, "state": "EVALUATED"}
         append_jsonl(self._evidence_path, record)
-        event_time = _now_utc()
-        for event in ("OBSERVED", "EVALUATED"):
+        self._repair_evaluated_events(candidate_id)
+        return record
+
+    def _repair_evaluated_events(self, candidate_id: str) -> None:
+        """Append only the missing valid suffix of a candidate's event sequence."""
+        expected_events = ("OBSERVED", "EVALUATED")
+        recorded_events = [
+            event.get("event")
+            for event in read_jsonl(self._ledger_path)
+            if event.get("candidate_id") == candidate_id
+        ]
+        if tuple(recorded_events) != expected_events[: len(recorded_events)]:
+            raise EvolutionError(f"invalid ledger history for {candidate_id!r}")
+        for event in expected_events[len(recorded_events) :]:
             append_jsonl(
                 self._ledger_path,
                 {
                     "candidate_id": candidate_id,
                     "event": event,
-                    "occurred_at_utc": event_time,
+                    "occurred_at_utc": _now_utc(),
                 },
             )
-        return record
 
     def latest_state(self, candidate_id: str) -> str | None:
         """Return the final recorded state for a candidate, if it has one."""
