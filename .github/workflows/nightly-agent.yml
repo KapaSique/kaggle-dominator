@@ -1,85 +1,23 @@
-# nightly-agent.yml — headless Claude Code runs a REAL multi-front Kaggle monitor nightly.
-#
-# SETUP (you do this once — the agent never enters secrets itself):
-#   Repo → Settings → Secrets and variables → Actions:
-#     Secrets:   ANTHROPIC_API_KEY   (from console.anthropic.com)
-#                KAGGLE_JSON         (contents of your ~/.kaggle/kaggle.json, OR a KGAT_ access token)
-#     Variables: COMP_SLUGS          (space-separated fronts, e.g. "playground-series-s6e6 orbit-wars ...")
-#
-# Current campaign policy: monitor the Pokémon ladder and linked judged track only.
-# It reads the REAL Kaggle state, writes a dated digest to STATUS.md, and appends any
-# MEASURED transferable insight to the playbook.
-# It NEVER submits — monitoring + curation only. Cloud-CI cannot see your local comp folders;
-# real agent grinding of local work requires a self-hosted runner (see scripts/SELF_HOSTED.md).
-name: nightly-kaggle-agent
+name: retired-nightly-agent-validation
 
 on:
-  schedule:
-    - cron: "23 2 * * *"    # 02:23 UTC nightly (off the :00 stampede)
-  workflow_dispatch: {}      # plus a manual "Run workflow" button
+  workflow_dispatch: {}
 
 permissions:
-  contents: write            # to commit STATUS.md + playbook back
+  contents: read
 
 jobs:
-  monitor:
+  validate-retirement:
     runs-on: ubuntu-latest
-    timeout-minutes: 30      # budget guard — monitoring is cheap
     steps:
       - uses: actions/checkout@v4
-
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Install CLIs
+      - name: Validate the retired legacy surface
         run: |
-          npm install -g @anthropic-ai/claude-code
-          pip install --quiet kaggle
-
-      - name: Configure Kaggle credentials
-        env:
-          KAGGLE_JSON: ${{ secrets.KAGGLE_JSON }}
-        run: |
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          raw = os.environ["KAGGLE_JSON"].strip()
-          kdir = Path.home() / ".kaggle"; kdir.mkdir(parents=True, exist_ok=True)
-          try:
-              payload = json.loads(raw)
-          except json.JSONDecodeError:
-              payload = {}
-          if isinstance(payload, dict) and payload.get("token") and not (payload.get("username") and payload.get("key")):
-              t = kdir / "access_token"; t.write_text(payload["token"].strip() + "\n")
-          elif raw.startswith("KGAT_"):
-              t = kdir / "access_token"; t.write_text(raw + "\n")
-          else:
-              t = kdir / "kaggle.json"; t.write_text(raw)
-          t.chmod(0o600)
-          print("kaggle creds written:", t.name)
-          PY
-
-      - name: Sanity — Kaggle API reachable
-        run: |
-          python3 -m kaggle competitions list -s playground 2>&1 | head -3 || \
-            echo "WARNING: kaggle API check failed (token may be expired)"
-
-      - name: Run multi-front monitor (headless, NO submit)
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          COMP_SLUGS: "pokemon-tcg-ai-battle pokemon-tcg-ai-battle-challenge-strategy"
-        run: |
-          if [ -z "$COMP_SLUGS" ]; then
-            echo "COMP_SLUGS variable is not set — nothing to monitor."; exit 0
-          fi
-          chmod +x scripts/kaggle_monitor.sh
-          ./scripts/kaggle_monitor.sh "$COMP_SLUGS"
-
-      - name: Commit digest + any playbook insight
-        run: |
-          git config user.name  "nightly-monitor"
-          git config user.email "actions@users.noreply.github.com"
-          git add STATUS.md references/grandmaster-playbook.md 2>/dev/null || true
-          git commit -m "nightly monitor: front digest $(date -u +%F)" || echo "no changes to commit"
-          git push || echo "push failed (non-fatal)"
+          python3 -m py_compile scripts/evolution.py
+          bash -n scripts/kaggle_monitor.sh scripts/kaggle_eval_loop.sh scripts/re_recon.sh
+          python3 -m unittest -v tests.test_workflow_policy

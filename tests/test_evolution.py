@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import sys
@@ -24,6 +25,18 @@ SPEC.loader.exec_module(evolution)
 EvolutionError = evolution.EvolutionError
 EvolutionStore = evolution.EvolutionStore
 read_jsonl = evolution.read_jsonl
+
+
+def _record_evidence_in_process(
+    state_dir: str, skill_root: str, evidence: dict, barrier: object, results: object
+) -> None:
+    """Execute one record operation in a separate process after a shared start barrier."""
+    try:
+        barrier.wait(timeout=15)
+        record = EvolutionStore(Path(state_dir), Path(skill_root)).record_evidence(evidence)
+        results.put({"record": record})
+    except BaseException as error:
+        results.put({"error": f"{type(error).__name__}: {error}"})
 
 
 def valid_evidence() -> dict:
@@ -186,6 +199,42 @@ class EvolutionStoreTests(unittest.TestCase):
         self.assertEqual(record["state"], "EVALUATED")
         self.assertEqual(self.store.latest_state("cand-1"), "EVALUATED")
         self.assertEqual(len(read_jsonl(self.state_dir / "evidence.jsonl")), 1)
+        self.assertEqual(
+            [event["event"] for event in read_jsonl(self.state_dir / "ledger.jsonl")],
+            ["OBSERVED", "EVALUATED"],
+        )
+
+    def test_concurrent_process_records_are_one_idempotent_evaluated_transition(self) -> None:
+        """A shared start barrier must not permit duplicate evidence or ledger events."""
+        process_count = 8
+        context = multiprocessing.get_context("fork")
+        barrier = context.Barrier(process_count)
+        results = context.Queue()
+        processes = [
+            context.Process(
+                target=_record_evidence_in_process,
+                args=(
+                    str(self.state_dir),
+                    str(self.skill_root),
+                    valid_evidence(),
+                    barrier,
+                    results,
+                ),
+            )
+            for _ in range(process_count)
+        ]
+        for process in processes:
+            process.start()
+        returned = [results.get(timeout=20) for _ in processes]
+        for process in processes:
+            process.join(timeout=20)
+            self.assertEqual(process.exitcode, 0, process.pid)
+
+        self.assertEqual(returned, [{"record": returned[0]["record"]}] * process_count)
+        self.assertEqual(
+            read_jsonl(self.state_dir / "evidence.jsonl"),
+            [returned[0]["record"]],
+        )
         self.assertEqual(
             [event["event"] for event in read_jsonl(self.state_dir / "ledger.jsonl")],
             ["OBSERVED", "EVALUATED"],

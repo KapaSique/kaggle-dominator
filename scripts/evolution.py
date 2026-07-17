@@ -626,15 +626,16 @@ class EvolutionStore:
         except (TypeError, ValueError) as error:
             raise EvolutionError(f"manifest must be JSON serializable: {error}") from error
         destination = self.root / "manifests" / f"{run_id}.json"
-        if destination.exists():
-            if read_json(destination) == normalized:
-                return destination
-            raise EvolutionError(f"manifest {run_id!r} is immutable and already exists")
-        try:
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(encoded, encoding="utf-8")
-        except OSError as error:
-            raise EvolutionError(f"cannot save manifest at {destination}: {error}") from error
+        with self._state_lock():
+            if destination.exists():
+                if read_json(destination) == normalized:
+                    return destination
+                raise EvolutionError(f"manifest {run_id!r} is immutable and already exists")
+            try:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(encoded, encoding="utf-8")
+            except OSError as error:
+                raise EvolutionError(f"cannot save manifest at {destination}: {error}") from error
         return destination
 
     def record_evidence(self, evidence: dict) -> dict:
@@ -642,23 +643,24 @@ class EvolutionStore:
         validate_evidence(evidence)
         normalized = _normalize_timestamps(evidence)
         candidate_id = normalized["candidate_id"]
-        for existing in read_jsonl(self._evidence_path):
-            if existing.get("candidate_id") == candidate_id:
-                immutable_evidence = {
-                    key: value for key, value in existing.items() if key != "state"
-                }
-                validate_evidence(immutable_evidence)
-                if existing.get("state") != "EVALUATED":
-                    raise EvolutionError(
-                        f"stored evidence for {candidate_id!r} has an invalid state"
-                    )
-                self._repair_evaluated_events(candidate_id)
-                return existing
+        with self._state_lock():
+            for existing in read_jsonl(self._evidence_path):
+                if existing.get("candidate_id") == candidate_id:
+                    immutable_evidence = {
+                        key: value for key, value in existing.items() if key != "state"
+                    }
+                    validate_evidence(immutable_evidence)
+                    if existing.get("state") != "EVALUATED":
+                        raise EvolutionError(
+                            f"stored evidence for {candidate_id!r} has an invalid state"
+                        )
+                    self._repair_evaluated_events(candidate_id)
+                    return existing
 
-        record = {**normalized, "state": "EVALUATED"}
-        append_jsonl(self._evidence_path, record)
-        self._repair_evaluated_events(candidate_id)
-        return record
+            record = {**normalized, "state": "EVALUATED"}
+            append_jsonl(self._evidence_path, record)
+            self._repair_evaluated_events(candidate_id)
+            return record
 
     def _repair_evaluated_events(self, candidate_id: str) -> None:
         """Append only the missing valid suffix of a candidate's event sequence."""
@@ -753,23 +755,29 @@ class EvolutionStore:
                 raise EvolutionError(f"{context}.event must be PROMOTED or ROLLED_BACK")
 
     @contextmanager
-    def _promotion_lock(self) -> Any:
-        """Serialize promotion/rollback mutation across store instances."""
+    def _state_lock(self) -> Any:
+        """Serialize every manifest, evidence, and ledger state transition."""
         try:
             self.root.mkdir(parents=True, exist_ok=True)
-            descriptor = os.open(self.root / ".promotion.lock", os.O_CREAT | os.O_RDWR, 0o600)
+            descriptor = os.open(self.root / ".state.lock", os.O_CREAT | os.O_RDWR, 0o600)
         except OSError as error:
-            raise EvolutionError(f"cannot open promotion lock: {error}") from error
+            raise EvolutionError(f"cannot open evolution state lock: {error}") from error
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX)
             yield
         except OSError as error:
-            raise EvolutionError(f"cannot lock promotion state: {error}") from error
+            raise EvolutionError(f"cannot lock evolution state: {error}") from error
         finally:
             try:
                 fcntl.flock(descriptor, fcntl.LOCK_UN)
             finally:
                 os.close(descriptor)
+
+    @contextmanager
+    def _promotion_lock(self) -> Any:
+        """Use the shared state lock so promotion cannot race record or manifests."""
+        with self._state_lock():
+            yield
 
     def _existing_promotion(self, candidate_id: str) -> dict | None:
         for event in self._promotion_events():
