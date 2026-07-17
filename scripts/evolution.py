@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from dataclasses import dataclass
+from decimal import Decimal
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -88,6 +90,18 @@ STRING_LIST_EVIDENCE_FIELDS = frozenset(
 )
 
 RUN_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
+ALLOWED_PROMOTION_PATH = "references/learned-playbook.md"
+MAX_RUNTIME_RATIO = 2.0
+MIN_CONFIRMATIONS = 2
+
+
+@dataclass(frozen=True)
+class GateResult:
+    """The deterministic decision for one candidate promotion request."""
+
+    passed: bool
+    reasons: tuple[str, ...]
+    improvement: float
 
 
 def read_json(path: Path) -> dict:
@@ -233,6 +247,14 @@ class EvolutionStore:
     def _ledger_path(self) -> Path:
         return self.root / "ledger.jsonl"
 
+    @property
+    def _promotions_path(self) -> Path:
+        return self.root / "promotions.jsonl"
+
+    @property
+    def _learned_playbook_path(self) -> Path:
+        return self.skill_root / ALLOWED_PROMOTION_PATH
+
     def save_manifest(self, manifest: dict) -> Path:
         """Persist a run manifest under its stable run identifier."""
         if not isinstance(manifest, dict):
@@ -288,7 +310,8 @@ class EvolutionStore:
             for event in read_jsonl(self._ledger_path)
             if event.get("candidate_id") == candidate_id
         ]
-        if tuple(recorded_events) != expected_events[: len(recorded_events)]:
+        initial_events = tuple(recorded_events[: len(expected_events)])
+        if initial_events != expected_events[: len(initial_events)]:
             raise EvolutionError(f"invalid ledger history for {candidate_id!r}")
         for event in expected_events[len(recorded_events) :]:
             append_jsonl(
@@ -299,6 +322,318 @@ class EvolutionStore:
                     "occurred_at_utc": _now_utc(),
                 },
             )
+
+    def _evidence_for(self, candidate_id: str) -> dict | None:
+        for evidence in read_jsonl(self._evidence_path):
+            if evidence.get("candidate_id") == candidate_id:
+                return evidence
+        return None
+
+    def _promotion_events(self) -> list[dict]:
+        return read_jsonl(self._promotions_path)
+
+    def _existing_promotion(self, candidate_id: str) -> dict | None:
+        for event in self._promotion_events():
+            if event.get("event") == "PROMOTED" and event.get("candidate_id") == candidate_id:
+                return event
+        return None
+
+    @staticmethod
+    def _same_utc_date(left: str, right: str) -> bool:
+        return _normalize_utc(left)[:10] == _normalize_utc(right)[:10]
+
+    def _promotion_occurred_today(self, candidate_id: str, now_utc: str) -> bool:
+        return any(
+            event.get("event") == "PROMOTED"
+            and event.get("candidate_id") != candidate_id
+            and isinstance(event.get("occurred_at_utc"), str)
+            and self._same_utc_date(event["occurred_at_utc"], now_utc)
+            for event in self._promotion_events()
+        )
+
+    @staticmethod
+    def _improvement(evidence: dict) -> float:
+        candidate_score = Decimal(str(evidence["candidate_score"]))
+        baseline_score = Decimal(str(evidence["baseline_score"]))
+        if evidence["direction"] == "higher":
+            return float(candidate_score - baseline_score)
+        return float(baseline_score - candidate_score)
+
+    @staticmethod
+    def _improvement_exceeds_noise(evidence: dict) -> bool:
+        candidate_score = Decimal(str(evidence["candidate_score"]))
+        baseline_score = Decimal(str(evidence["baseline_score"]))
+        improvement = (
+            candidate_score - baseline_score
+            if evidence["direction"] == "higher"
+            else baseline_score - candidate_score
+        )
+        return improvement > Decimal(str(evidence["noise_floor"]))
+
+    @staticmethod
+    def _is_string_list(value: object) -> bool:
+        return isinstance(value, list) and all(isinstance(item, str) and item for item in value)
+
+    def _gate_reasons(
+        self,
+        candidate_id: str,
+        evidence: dict | None,
+        verification: object,
+        comparison: object,
+        now_utc: str,
+    ) -> tuple[list[str], float]:
+        if evidence is None:
+            return ["candidate_not_found"], 0.0
+
+        try:
+            validate_evidence({key: value for key, value in evidence.items() if key != "state"})
+        except EvolutionError:
+            return ["evidence_invalid"], 0.0
+        if evidence.get("state") != "EVALUATED":
+            return ["evidence_invalid"], 0.0
+
+        reasons: list[str] = []
+        improvement = self._improvement(evidence)
+        if evidence["status"] != "succeeded":
+            reasons.append("candidate_not_succeeded")
+        if not evidence["metric_direction_verified"]:
+            reasons.append("metric_direction_unverified")
+        if not self._improvement_exceeds_noise(evidence):
+            reasons.append("improvement_not_above_noise")
+        if evidence["confirmations"] < MIN_CONFIRMATIONS:
+            reasons.append("insufficient_confirmations")
+        if not evidence["transferable"]:
+            reasons.append("claim_not_transferable")
+        if len(set(evidence["validation_regimes"])) < MIN_CONFIRMATIONS:
+            reasons.append("insufficient_validation_regimes")
+        if evidence["regressions"]:
+            reasons.append("regressions_present")
+        if evidence["forbidden_actions"]:
+            reasons.append("forbidden_actions_present")
+        if any(path != ALLOWED_PROMOTION_PATH for path in evidence["changed_paths"]):
+            reasons.append("protected_path_changed")
+        if evidence["runtime_ratio"] > MAX_RUNTIME_RATIO:
+            reasons.append("runtime_ratio_exceeded")
+
+        if not isinstance(verification, dict):
+            reasons.append("verifier_invalid")
+        else:
+            if verification.get("candidate_id") != candidate_id:
+                reasons.append("verifier_candidate_mismatch")
+            if verification.get("verdict") != "PASS":
+                reasons.append("verifier_not_pass")
+            if verification.get("fresh_context") is not True:
+                reasons.append("verifier_not_fresh")
+            if not isinstance(verification.get("reviewer_id"), str) or not verification["reviewer_id"]:
+                reasons.append("verifier_reviewer_missing")
+            if not self._is_string_list(verification.get("checked_artifacts")) or not verification[
+                "checked_artifacts"
+            ]:
+                reasons.append("verifier_checked_artifacts_missing")
+            if not isinstance(verification.get("issues"), list):
+                reasons.append("verifier_issues_invalid")
+            elif verification["issues"]:
+                reasons.append("verifier_issues_present")
+
+        if not isinstance(comparison, dict):
+            reasons.append("comparator_invalid")
+        else:
+            if comparison.get("candidate_id") != candidate_id:
+                reasons.append("comparator_candidate_mismatch")
+            if comparison.get("blind") is not True:
+                reasons.append("comparator_not_blind")
+            if comparison.get("winner") != "challenger":
+                reasons.append("comparator_did_not_select_challenger")
+            if not isinstance(comparison.get("rubric"), dict):
+                reasons.append("comparator_rubric_missing")
+
+        if self._existing_promotion(candidate_id) is not None:
+            reasons.append("already_promoted")
+        if self._promotion_occurred_today(candidate_id, now_utc):
+            reasons.append("promotion_already_occurred_today")
+        return reasons, improvement
+
+    def gate_candidate(
+        self, candidate_id: str, verification: dict, comparison: dict
+    ) -> GateResult:
+        """Fail closed unless all evidence, verifier, and comparison gates pass."""
+        if not isinstance(candidate_id, str) or not candidate_id:
+            raise EvolutionError("candidate_id must be a non-empty string")
+        now_utc = _now_utc()
+        reasons, improvement = self._gate_reasons(
+            candidate_id,
+            self._evidence_for(candidate_id),
+            verification,
+            comparison,
+            now_utc,
+        )
+        result = GateResult(not reasons, tuple(reasons), improvement)
+        if self._evidence_for(candidate_id) is None:
+            return result
+
+        state = self.latest_state(candidate_id)
+        if result.passed:
+            if state != "VERIFIED":
+                append_jsonl(
+                    self._ledger_path,
+                    {
+                        "candidate_id": candidate_id,
+                        "event": "VERIFIED",
+                        "occurred_at_utc": now_utc,
+                    },
+                )
+        elif state != "REJECTED" and self._existing_promotion(candidate_id) is None:
+            append_jsonl(
+                self._ledger_path,
+                {
+                    "candidate_id": candidate_id,
+                    "event": "REJECTED",
+                    "occurred_at_utc": now_utc,
+                    "reasons": list(result.reasons),
+                },
+            )
+        return result
+
+    def _render_learned_playbook(self) -> None:
+        events = self._promotion_events()
+        rolled_back = {
+            event.get("promotion_id")
+            for event in events
+            if event.get("event") == "ROLLED_BACK" and isinstance(event.get("promotion_id"), str)
+        }
+        active = [
+            event
+            for event in events
+            if event.get("event") == "PROMOTED"
+            and event.get("promotion_id") not in rolled_back
+        ]
+        active.sort(key=lambda event: (event.get("occurred_at_utc", ""), event.get("candidate_id", "")))
+        lines = [
+            "# Learned playbook",
+            "",
+            "<!-- Generated by scripts/evolution.py from active promotion events. Do not edit. -->",
+            "",
+        ]
+        for promotion in active:
+            evidence = promotion["evidence"]
+            lines.extend(
+                [
+                    f"## {promotion['candidate_id']}",
+                    "",
+                    f"- Promotion ID: `{promotion['promotion_id']}`",
+                    f"- Promoted at (UTC): `{promotion['occurred_at_utc']}`",
+                    f"- Claim: {evidence['claim']}",
+                    f"- Scope limits: {evidence['scope_limits']}",
+                    (
+                        "- Metric: "
+                        f"{evidence['metric']} ({evidence['direction']} is better); "
+                        f"baseline {evidence['baseline_score']}, candidate {evidence['candidate_score']}."
+                    ),
+                    (
+                        "- Evidence identifiers: "
+                        f"code `{evidence['code_sha']}`, data `{evidence['data_fingerprint']}`, "
+                        f"config `{evidence['config_hash']}`."
+                    ),
+                    "",
+                ]
+            )
+        rendered = "\n".join(lines)
+        destination = self._learned_playbook_path
+        temporary = destination.with_name(f".{destination.name}.tmp")
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            temporary.write_text(rendered, encoding="utf-8")
+            temporary.replace(destination)
+        except OSError as error:
+            raise EvolutionError(f"cannot render learned playbook at {destination}: {error}") from error
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+
+    def promote(self, candidate_id: str, verification: dict, comparison: dict) -> dict:
+        """Append a promotion only after a passing gate, then render active learnings."""
+        existing = self._existing_promotion(candidate_id)
+        if existing is not None:
+            return existing
+        gate = self.gate_candidate(candidate_id, verification, comparison)
+        if not gate.passed:
+            return {
+                "candidate_id": candidate_id,
+                "event": "REJECTED",
+                "reasons": list(gate.reasons),
+                "improvement": gate.improvement,
+            }
+        evidence = self._evidence_for(candidate_id)
+        if evidence is None:
+            raise EvolutionError(f"candidate {candidate_id!r} is missing evidence")
+        occurred_at_utc = _now_utc()
+        promotion = {
+            "promotion_id": f"{candidate_id}@{occurred_at_utc}",
+            "event": "PROMOTED",
+            "candidate_id": candidate_id,
+            "occurred_at_utc": occurred_at_utc,
+            "improvement": gate.improvement,
+            "evidence": evidence,
+        }
+        append_jsonl(self._promotions_path, promotion)
+        append_jsonl(
+            self._ledger_path,
+            {
+                "candidate_id": candidate_id,
+                "event": "PROMOTED",
+                "occurred_at_utc": occurred_at_utc,
+                "promotion_id": promotion["promotion_id"],
+            },
+        )
+        self._render_learned_playbook()
+        return promotion
+
+    def rollback(self, promotion_id: str, reason: str) -> dict:
+        """Append a rollback event and regenerate the reference without deleting history."""
+        if not isinstance(promotion_id, str) or not promotion_id:
+            raise EvolutionError("promotion_id must be a non-empty string")
+        if not isinstance(reason, str) or not reason.strip():
+            raise EvolutionError("rollback reason must be a non-empty string")
+        promotions = self._promotion_events()
+        promotion = next(
+            (
+                event
+                for event in promotions
+                if event.get("event") == "PROMOTED" and event.get("promotion_id") == promotion_id
+            ),
+            None,
+        )
+        if promotion is None:
+            raise EvolutionError(f"unknown promotion_id {promotion_id!r}")
+        existing = next(
+            (
+                event
+                for event in promotions
+                if event.get("event") == "ROLLED_BACK" and event.get("promotion_id") == promotion_id
+            ),
+            None,
+        )
+        if existing is not None:
+            return existing
+        rollback = {
+            "event": "ROLLED_BACK",
+            "promotion_id": promotion_id,
+            "candidate_id": promotion["candidate_id"],
+            "reason": reason.strip(),
+            "occurred_at_utc": _now_utc(),
+        }
+        append_jsonl(self._promotions_path, rollback)
+        append_jsonl(
+            self._ledger_path,
+            {
+                "candidate_id": promotion["candidate_id"],
+                "event": "ROLLED_BACK",
+                "promotion_id": promotion_id,
+                "occurred_at_utc": rollback["occurred_at_utc"],
+            },
+        )
+        self._render_learned_playbook()
+        return rollback
 
     def latest_state(self, candidate_id: str) -> str | None:
         """Return the final recorded state for a candidate, if it has one."""
@@ -350,6 +685,17 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("manifest", type=Path)
     record = commands.add_parser("record", help="record evaluated evidence JSON")
     record.add_argument("evidence", type=Path)
+    for command_name, help_text in (
+        ("gate", "evaluate promotion gates from verifier and comparator JSON"),
+        ("promote", "promote a passing candidate from verifier and comparator JSON"),
+    ):
+        command = commands.add_parser(command_name, help=help_text)
+        command.add_argument("candidate_id")
+        command.add_argument("verification", type=Path)
+        command.add_argument("comparison", type=Path)
+    rollback = commands.add_parser("rollback", help="roll back a previous promotion")
+    rollback.add_argument("promotion_id")
+    rollback.add_argument("reason")
     commands.add_parser("status", help="print evidence and state counts")
     return parser
 
@@ -362,12 +708,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             result: object = {"manifest": str(store.save_manifest(read_json(args.manifest)))}
         elif args.command == "record":
             result = store.record_evidence(read_json(args.evidence))
+        elif args.command == "gate":
+            result = store.gate_candidate(
+                args.candidate_id,
+                read_json(args.verification),
+                read_json(args.comparison),
+            )
+        elif args.command == "promote":
+            result = store.promote(
+                args.candidate_id,
+                read_json(args.verification),
+                read_json(args.comparison),
+            )
+        elif args.command == "rollback":
+            result = store.rollback(args.promotion_id, args.reason)
         else:
             result = store.status()
     except EvolutionError as error:
         print(f"evolution error: {error}", file=sys.stderr)
         return 2
-    print(json.dumps(result, indent=2, sort_keys=True))
+    print(json.dumps(result, indent=2, sort_keys=True, default=lambda value: value.__dict__))
     return 0
 
 

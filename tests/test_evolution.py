@@ -55,6 +55,31 @@ def valid_evidence() -> dict:
     }
 
 
+def passing_verifier(candidate_id: str = "cand-1") -> dict:
+    return {
+        "candidate_id": candidate_id,
+        "verdict": "PASS",
+        "fresh_context": True,
+        "reviewer_id": "verifier-1",
+        "checked_artifacts": ["evidence.json", "oof.parquet"],
+        "issues": [],
+    }
+
+
+def passing_comparator(candidate_id: str = "cand-1") -> dict:
+    return {
+        "candidate_id": candidate_id,
+        "winner": "challenger",
+        "blind": True,
+        "rubric": {
+            "score": 5,
+            "stability": 5,
+            "runtime": 4,
+            "reproducibility": 5,
+        },
+    }
+
+
 class EvolutionStoreTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -209,6 +234,221 @@ class EvolutionStoreTests(unittest.TestCase):
         self.assertEqual(status["evidence_count"], 1)
 
 
+class EvolutionPromotionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        root = Path(self.temp_dir.name)
+        self.state_dir = root / "state"
+        self.skill_root = root / "skill"
+        self.store = EvolutionStore(self.state_dir, self.skill_root)
+
+    @property
+    def learned_playbook(self) -> Path:
+        return self.skill_root / "references" / "learned-playbook.md"
+
+    def record(self, candidate_id: str = "cand-1", **changes: object) -> dict:
+        evidence = valid_evidence()
+        evidence["candidate_id"] = candidate_id
+        evidence.update(changes)
+        return self.store.record_evidence(evidence)
+
+    def gate(self, candidate_id: str = "cand-1", **changes: object) -> object:
+        self.record(candidate_id, **changes)
+        return self.store.gate_candidate(
+            candidate_id, passing_verifier(candidate_id), passing_comparator(candidate_id)
+        )
+
+    def test_passing_gate_promotes_and_rollback_removes_generated_claim(self) -> None:
+        self.record()
+
+        result = self.store.gate_candidate("cand-1", passing_verifier(), passing_comparator())
+        self.assertTrue(result.passed)
+        self.assertEqual(result.reasons, ())
+        self.assertGreater(result.improvement, 0)
+
+        promotion = self.store.promote("cand-1", passing_verifier(), passing_comparator())
+        self.assertEqual(self.store.latest_state("cand-1"), "PROMOTED")
+        self.assertIn("cand-1", self.learned_playbook.read_text(encoding="utf-8"))
+        self.assertIn(valid_evidence()["claim"], self.learned_playbook.read_text(encoding="utf-8"))
+
+        rollback = self.store.rollback(promotion["promotion_id"], "regression discovered")
+        self.assertEqual(rollback["event"], "ROLLED_BACK")
+        self.assertEqual(self.store.latest_state("cand-1"), "ROLLED_BACK")
+        self.assertNotIn(valid_evidence()["claim"], self.learned_playbook.read_text(encoding="utf-8"))
+
+    def test_gate_rejects_unverified_metric_direction(self) -> None:
+        result = self.gate(metric_direction_verified=False)
+
+        self.assertFalse(result.passed)
+        self.assertIn("metric_direction_unverified", result.reasons)
+
+    def test_gate_uses_lower_is_better_direction_for_improvement(self) -> None:
+        result = self.gate(direction="lower", candidate_score=0.9506)
+
+        self.assertTrue(result.passed)
+        self.assertAlmostEqual(result.improvement, 0.0004)
+
+    def test_gate_rejects_delta_at_noise_floor(self) -> None:
+        result = self.gate(candidate_score=0.9512)
+
+        self.assertFalse(result.passed)
+        self.assertIn("improvement_not_above_noise", result.reasons)
+
+    def test_gate_rejects_fewer_than_two_confirmations(self) -> None:
+        result = self.gate(confirmations=1)
+
+        self.assertFalse(result.passed)
+        self.assertIn("insufficient_confirmations", result.reasons)
+
+    def test_gate_rejects_transferable_claim_with_one_regime(self) -> None:
+        result = self.gate(validation_regimes=["folds-v1"])
+
+        self.assertFalse(result.passed)
+        self.assertIn("insufficient_validation_regimes", result.reasons)
+
+    def test_gate_rejects_non_transferable_claim(self) -> None:
+        result = self.gate(transferable=False)
+
+        self.assertFalse(result.passed)
+        self.assertIn("claim_not_transferable", result.reasons)
+
+    def test_gate_rejects_non_succeeded_candidate(self) -> None:
+        result = self.gate(status="failed")
+
+        self.assertFalse(result.passed)
+        self.assertIn("candidate_not_succeeded", result.reasons)
+
+    def test_gate_rejects_regressions(self) -> None:
+        result = self.gate(regressions=["fairness regression"])
+
+        self.assertFalse(result.passed)
+        self.assertIn("regressions_present", result.reasons)
+
+    def test_gate_rejects_forbidden_actions(self) -> None:
+        result = self.gate(forbidden_actions=["submitted to Kaggle"])
+
+        self.assertFalse(result.passed)
+        self.assertIn("forbidden_actions_present", result.reasons)
+
+    def test_gate_rejects_protected_path_changes(self) -> None:
+        result = self.gate(changed_paths=["SKILL.md"])
+
+        self.assertFalse(result.passed)
+        self.assertIn("protected_path_changed", result.reasons)
+
+    def test_gate_rejects_runtime_ratio_above_two(self) -> None:
+        result = self.gate(runtime_ratio=2.01)
+
+        self.assertFalse(result.passed)
+        self.assertIn("runtime_ratio_exceeded", result.reasons)
+
+    def test_gate_rejects_stale_or_non_fresh_verifier(self) -> None:
+        self.record()
+        verifier = passing_verifier()
+        verifier["fresh_context"] = False
+        verifier["verdict"] = "STALE"
+
+        result = self.store.gate_candidate("cand-1", verifier, passing_comparator())
+
+        self.assertFalse(result.passed)
+        self.assertIn("verifier_not_fresh", result.reasons)
+        self.assertIn("verifier_not_pass", result.reasons)
+
+    def test_gate_rejects_verifier_issues(self) -> None:
+        self.record()
+        verifier = passing_verifier()
+        verifier["issues"] = ["artifact mismatch"]
+
+        result = self.store.gate_candidate("cand-1", verifier, passing_comparator())
+
+        self.assertFalse(result.passed)
+        self.assertIn("verifier_issues_present", result.reasons)
+
+    def test_gate_rejects_verifier_without_checked_artifacts(self) -> None:
+        self.record()
+        verifier = passing_verifier()
+        verifier["checked_artifacts"] = []
+
+        result = self.store.gate_candidate("cand-1", verifier, passing_comparator())
+
+        self.assertFalse(result.passed)
+        self.assertIn("verifier_checked_artifacts_missing", result.reasons)
+
+    def test_gate_rejects_non_blind_comparator(self) -> None:
+        self.record()
+        comparison = passing_comparator()
+        comparison["blind"] = False
+
+        result = self.store.gate_candidate("cand-1", passing_verifier(), comparison)
+
+        self.assertFalse(result.passed)
+        self.assertIn("comparator_not_blind", result.reasons)
+
+    def test_gate_rejects_incumbent_winner(self) -> None:
+        self.record()
+        comparison = passing_comparator()
+        comparison["winner"] = "incumbent"
+
+        result = self.store.gate_candidate("cand-1", passing_verifier(), comparison)
+
+        self.assertFalse(result.passed)
+        self.assertIn("comparator_did_not_select_challenger", result.reasons)
+
+    def test_duplicate_promotion_is_idempotent(self) -> None:
+        self.record()
+
+        first = self.store.promote("cand-1", passing_verifier(), passing_comparator())
+        second = self.store.promote("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertEqual(second, first)
+        events = read_jsonl(self.state_dir / "promotions.jsonl")
+        self.assertEqual([event["event"] for event in events], ["PROMOTED"])
+
+    def test_duplicate_gate_preserves_promoted_terminal_state(self) -> None:
+        self.record()
+        self.store.promote("cand-1", passing_verifier(), passing_comparator())
+
+        result = self.store.gate_candidate("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertFalse(result.passed)
+        self.assertIn("already_promoted", result.reasons)
+        self.assertEqual(self.store.latest_state("cand-1"), "PROMOTED")
+
+    def test_gate_rejects_second_promotion_on_same_utc_day(self) -> None:
+        self.record()
+        self.store.promote("cand-1", passing_verifier(), passing_comparator())
+        self.record("cand-2")
+
+        result = self.store.gate_candidate(
+            "cand-2", passing_verifier("cand-2"), passing_comparator("cand-2")
+        )
+
+        self.assertFalse(result.passed)
+        self.assertIn("promotion_already_occurred_today", result.reasons)
+
+    def test_rejected_gate_appends_event_without_changing_generated_reference(self) -> None:
+        self.record(regressions=["bad regression"])
+        before = self.learned_playbook.read_bytes() if self.learned_playbook.exists() else None
+
+        result = self.store.gate_candidate("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertFalse(result.passed)
+        self.assertEqual(self.store.latest_state("cand-1"), "REJECTED")
+        after = self.learned_playbook.read_bytes() if self.learned_playbook.exists() else None
+        self.assertEqual(after, before)
+
+    def test_gate_fails_closed_for_corrupt_stored_evidence(self) -> None:
+        append = {"candidate_id": "cand-1", "state": "EVALUATED"}
+        self.state_dir.mkdir(parents=True)
+        (self.state_dir / "evidence.jsonl").write_text(json.dumps(append) + "\n", encoding="utf-8")
+
+        result = self.store.gate_candidate("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertFalse(result.passed)
+        self.assertEqual(result.reasons, ("evidence_invalid",))
+
+
 class EvolutionCliTests(unittest.TestCase):
     def test_plan_record_and_status_commands_use_json_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -251,6 +491,61 @@ class EvolutionCliTests(unittest.TestCase):
 
             self.assertEqual(result, 2)
             self.assertIn("evolution error: evidence.direction", stderr.getvalue())
+
+    def test_gate_promote_and_rollback_commands_use_json_contracts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state_dir = root / "state"
+            evidence_path = root / "evidence.json"
+            verifier_path = root / "verifier.json"
+            comparator_path = root / "comparator.json"
+            evidence_path.write_text(json.dumps(valid_evidence()), encoding="utf-8")
+            verifier_path.write_text(json.dumps(passing_verifier()), encoding="utf-8")
+            comparator_path.write_text(json.dumps(passing_comparator()), encoding="utf-8")
+            common = ["--root", str(state_dir), "--skill-root", str(root / "skill")]
+
+            self.assertEqual(evolution.main([*common, "record", str(evidence_path)]), 0)
+            gate_output = io.StringIO()
+            with contextlib.redirect_stdout(gate_output):
+                self.assertEqual(
+                    evolution.main(
+                        [
+                            *common,
+                            "gate",
+                            "cand-1",
+                            str(verifier_path),
+                            str(comparator_path),
+                        ]
+                    ),
+                    0,
+                )
+            promote_output = io.StringIO()
+            with contextlib.redirect_stdout(promote_output):
+                self.assertEqual(
+                    evolution.main(
+                        [
+                            *common,
+                            "promote",
+                            "cand-1",
+                            str(verifier_path),
+                            str(comparator_path),
+                        ]
+                    ),
+                    0,
+                )
+            promotion_id = json.loads(promote_output.getvalue())["promotion_id"]
+            rollback_output = io.StringIO()
+            with contextlib.redirect_stdout(rollback_output):
+                self.assertEqual(
+                    evolution.main(
+                        [*common, "rollback", promotion_id, "regression discovered"]
+                    ),
+                    0,
+                )
+
+            self.assertIn('"passed": true', gate_output.getvalue())
+            self.assertIn('"candidate_id": "cand-1"', promote_output.getvalue())
+            self.assertIn('"event": "ROLLED_BACK"', rollback_output.getvalue())
 
 
 if __name__ == "__main__":
