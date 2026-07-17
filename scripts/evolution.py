@@ -831,6 +831,7 @@ class EvolutionStore:
                 self._reconcile_terminal_ledger(promotion["candidate_id"], promotions)
                 self._render_learned_playbook()
                 return existing
+            self._reconcile_terminal_ledger(promotion["candidate_id"], promotions)
             rollback = {
                 "event": "ROLLED_BACK",
                 "promotion_id": promotion_id,

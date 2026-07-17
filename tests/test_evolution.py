@@ -561,6 +561,33 @@ class EvolutionPromotionTests(unittest.TestCase):
         self.assertEqual(self.store.latest_state("cand-1"), "PROMOTED")
         self.assertIn(promotion["evidence"]["claim"], self.learned_playbook.read_text(encoding="utf-8"))
 
+    def test_new_rollback_recovers_missing_promoted_terminal_before_rollback(self) -> None:
+        self.record()
+        original_append = evolution.append_jsonl
+
+        def fail_promoted_ledger_append(path: Path, payload: dict) -> None:
+            if path == self.state_dir / "ledger.jsonl" and payload.get("event") == "PROMOTED":
+                raise EvolutionError("injected promoted ledger failure")
+            original_append(path, payload)
+
+        with patch.object(evolution, "append_jsonl", side_effect=fail_promoted_ledger_append):
+            with self.assertRaisesRegex(EvolutionError, "injected promoted ledger failure"):
+                self.store.promote("cand-1", passing_verifier(), passing_comparator())
+
+        promotion = read_jsonl(self.state_dir / "promotions.jsonl")[0]
+        rollback = self.store.rollback(promotion["promotion_id"], "regression")
+        retry = self.store.rollback(promotion["promotion_id"], "regression")
+        terminal_events = [
+            event
+            for event in read_jsonl(self.state_dir / "ledger.jsonl")
+            if event["event"] in {"PROMOTED", "ROLLED_BACK"}
+        ]
+
+        self.assertEqual([event["event"] for event in terminal_events], ["PROMOTED", "ROLLED_BACK"])
+        self.assertEqual(rollback, retry)
+        self.assertEqual(self.store.latest_state("cand-1"), "ROLLED_BACK")
+        self.assertNotIn(valid_evidence()["claim"], self.learned_playbook.read_text(encoding="utf-8"))
+
     def test_rollback_retry_recovers_missing_terminal_ledger_event(self) -> None:
         self.record()
         promotion = self.store.promote("cand-1", passing_verifier(), passing_comparator())
