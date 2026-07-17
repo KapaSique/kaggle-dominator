@@ -1,10 +1,12 @@
 import contextlib
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import io
 import json
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -259,6 +261,23 @@ class EvolutionPromotionTests(unittest.TestCase):
             candidate_id, passing_verifier(candidate_id), passing_comparator(candidate_id)
         )
 
+    def promotion_event(
+        self,
+        candidate_id: str = "cand-old",
+        promotion_id: str = "cand-old@2026-07-17T00:00:00Z",
+        occurred_at_utc: str = "2026-07-17T00:00:00Z",
+    ) -> dict:
+        evidence = valid_evidence()
+        evidence.update({"candidate_id": candidate_id, "state": "EVALUATED"})
+        return {
+            "event": "PROMOTED",
+            "promotion_id": promotion_id,
+            "candidate_id": candidate_id,
+            "occurred_at_utc": occurred_at_utc,
+            "improvement": 0.001,
+            "evidence": evidence,
+        }
+
     def test_passing_gate_promotes_and_rollback_removes_generated_claim(self) -> None:
         self.record()
 
@@ -447,6 +466,199 @@ class EvolutionPromotionTests(unittest.TestCase):
 
         self.assertFalse(result.passed)
         self.assertEqual(result.reasons, ("evidence_invalid",))
+
+    def test_validate_evidence_rejects_negative_noise_floor(self) -> None:
+        evidence = valid_evidence()
+        evidence["noise_floor"] = -0.01
+
+        with self.assertRaisesRegex(EvolutionError, "noise_floor"):
+            self.store.record_evidence(evidence)
+
+    def test_gate_requires_positive_improvement_even_with_negative_noise_floor(self) -> None:
+        evidence = valid_evidence()
+        evidence.update({"candidate_score": 0.950, "noise_floor": -0.01, "state": "EVALUATED"})
+
+        with patch.object(evolution, "validate_evidence"):
+            reasons, _ = self.store._gate_reasons(
+                "cand-1", evidence, passing_verifier(), passing_comparator(), "2026-07-17T00:00:00Z"
+            )
+
+        self.assertIn("improvement_not_positive", reasons)
+
+    def test_render_rejects_symlinked_playbook_without_touching_victim(self) -> None:
+        victim = Path(self.temp_dir.name) / "victim.md"
+        victim.write_bytes(b"do not overwrite")
+        self.learned_playbook.parent.mkdir(parents=True)
+        self.learned_playbook.symlink_to(victim)
+        self.record()
+
+        with self.assertRaises(EvolutionError):
+            self.store.promote("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertEqual(victim.read_bytes(), b"do not overwrite")
+
+    def test_render_rejects_symlinked_reference_directory_without_touching_victim(self) -> None:
+        outside = Path(self.temp_dir.name) / "outside"
+        outside.mkdir()
+        victim = outside / "learned-playbook.md"
+        victim.write_bytes(b"do not overwrite")
+        self.skill_root.mkdir()
+        (self.skill_root / "references").symlink_to(outside, target_is_directory=True)
+        self.record()
+
+        with self.assertRaises(EvolutionError):
+            self.store.promote("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertEqual(victim.read_bytes(), b"do not overwrite")
+
+    def test_promote_retry_reconciles_playbook_after_render_failure(self) -> None:
+        self.record()
+        with patch.object(self.store, "_render_learned_playbook", side_effect=EvolutionError("injected")):
+            with self.assertRaisesRegex(EvolutionError, "injected"):
+                self.store.promote("cand-1", passing_verifier(), passing_comparator())
+
+        promotion = self.store.promote("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertEqual([event["event"] for event in read_jsonl(self.state_dir / "promotions.jsonl")], ["PROMOTED"])
+        self.assertIn(promotion["evidence"]["claim"], self.learned_playbook.read_text(encoding="utf-8"))
+
+    def test_rollback_retry_reconciles_playbook_after_render_failure(self) -> None:
+        self.record()
+        promotion = self.store.promote("cand-1", passing_verifier(), passing_comparator())
+        with patch.object(self.store, "_render_learned_playbook", side_effect=EvolutionError("injected")):
+            with self.assertRaisesRegex(EvolutionError, "injected"):
+                self.store.rollback(promotion["promotion_id"], "regression")
+
+        rollback = self.store.rollback(promotion["promotion_id"], "regression")
+
+        self.assertEqual(rollback["event"], "ROLLED_BACK")
+        self.assertEqual(
+            [event["event"] for event in read_jsonl(self.state_dir / "promotions.jsonl")],
+            ["PROMOTED", "ROLLED_BACK"],
+        )
+        self.assertNotIn(valid_evidence()["claim"], self.learned_playbook.read_text(encoding="utf-8"))
+
+    def test_promotion_uses_one_timestamp_across_utc_boundary(self) -> None:
+        evolution.append_jsonl(
+            self.state_dir / "promotions.jsonl",
+            self.promotion_event(
+                candidate_id="cand-old",
+                promotion_id="old@2026-07-18T00:00:00Z",
+                occurred_at_utc="2026-07-18T00:00:00Z",
+            ),
+        )
+        self.record("cand-1")
+
+        with patch.object(
+            evolution,
+            "_now_utc",
+            side_effect=["2026-07-17T23:59:59Z", "2026-07-18T00:00:00Z"],
+        ) as now:
+            promotion = self.store.promote("cand-1", passing_verifier(), passing_comparator())
+
+        self.assertEqual(promotion["occurred_at_utc"], "2026-07-17T23:59:59Z")
+        self.assertEqual(now.call_count, 1)
+
+    def test_concurrent_candidates_allow_at_most_one_same_day_promotion(self) -> None:
+        first = EvolutionStore(self.state_dir, self.skill_root)
+        second = EvolutionStore(self.state_dir, self.skill_root)
+        first.record_evidence(valid_evidence())
+        second_evidence = valid_evidence()
+        second_evidence["candidate_id"] = "cand-2"
+        second.record_evidence(second_evidence)
+        barrier = threading.Barrier(2)
+        original = EvolutionStore._promotion_occurred_today
+
+        def synchronized(store: EvolutionStore, candidate_id: str, now_utc: str) -> bool:
+            try:
+                barrier.wait(timeout=0.2)
+            except threading.BrokenBarrierError:
+                pass
+            return original(store, candidate_id, now_utc)
+
+        with patch.object(EvolutionStore, "_promotion_occurred_today", new=synchronized):
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                results = list(
+                    workers.map(
+                        lambda args: args[0].promote(
+                            args[1], passing_verifier(args[1]), passing_comparator(args[1])
+                        ),
+                        ((first, "cand-1"), (second, "cand-2")),
+                    )
+                )
+
+        self.assertEqual(sum(result["event"] == "PROMOTED" for result in results), 1)
+        self.assertEqual(
+            len([event for event in read_jsonl(self.state_dir / "promotions.jsonl") if event["event"] == "PROMOTED"]),
+            1,
+        )
+
+    def test_corrupt_promotion_history_blocks_gate_and_rollback_without_writes(self) -> None:
+        self.record()
+        corrupt = {"event": "PROMOTED", "promotion_id": "bad", "candidate_id": "cand-1"}
+        evolution.append_jsonl(self.state_dir / "promotions.jsonl", corrupt)
+        ledger_before = (self.state_dir / "ledger.jsonl").read_bytes()
+        promotions_before = (self.state_dir / "promotions.jsonl").read_bytes()
+
+        with self.assertRaises(EvolutionError):
+            self.store.gate_candidate("cand-1", passing_verifier(), passing_comparator())
+        with self.assertRaises(EvolutionError):
+            self.store.rollback("bad", "reason")
+
+        self.assertEqual((self.state_dir / "ledger.jsonl").read_bytes(), ledger_before)
+        self.assertEqual((self.state_dir / "promotions.jsonl").read_bytes(), promotions_before)
+
+    def test_corrupt_promotion_history_rejects_duplicate_candidate_and_broken_rollback(self) -> None:
+        first = self.promotion_event()
+        duplicate = self.promotion_event(candidate_id="cand-old", promotion_id="other@2026-07-17T01:00:00Z")
+        broken = {
+            "event": "ROLLED_BACK",
+            "promotion_id": "missing@2026-07-17T02:00:00Z",
+            "candidate_id": "missing",
+            "reason": "bad",
+            "occurred_at_utc": "2026-07-17T02:00:00Z",
+        }
+        for events in ((first, duplicate), (broken,)):
+            with self.subTest(events=events):
+                path = self.state_dir / "promotions.jsonl"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
+                with self.assertRaises(EvolutionError):
+                    self.store._render_learned_playbook()
+
+    def test_corrupt_promotion_history_rejects_unexpected_outer_state(self) -> None:
+        event = self.promotion_event()
+        event["state"] = "PROMOTED"
+        evolution.append_jsonl(self.state_dir / "promotions.jsonl", event)
+
+        with self.assertRaises(EvolutionError):
+            self.store._render_learned_playbook()
+
+    def test_corrupt_promotion_history_returns_cli_error(self) -> None:
+        self.record()
+        evolution.append_jsonl(self.state_dir / "promotions.jsonl", {"event": "UNKNOWN"})
+        verifier = Path(self.temp_dir.name) / "verifier.json"
+        comparator = Path(self.temp_dir.name) / "comparator.json"
+        verifier.write_text(json.dumps(passing_verifier()), encoding="utf-8")
+        comparator.write_text(json.dumps(passing_comparator()), encoding="utf-8")
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr):
+            result = evolution.main(
+                [
+                    "--root",
+                    str(self.state_dir),
+                    "--skill-root",
+                    str(self.skill_root),
+                    "gate",
+                    "cand-1",
+                    str(verifier),
+                    str(comparator),
+                ]
+            )
+
+        self.assertEqual(result, 2)
+        self.assertIn("evolution error:", stderr.getvalue())
 
 
 class EvolutionCliTests(unittest.TestCase):
