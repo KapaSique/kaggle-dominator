@@ -116,6 +116,8 @@ PROVENANCE_ARTIFACT_FIELDS = frozenset(
         "input_artifacts",
     }
 )
+SOURCE_INPUT_KINDS = frozenset({"raw_evidence", "artifact_pointer", "diff_package"})
+SOURCE_INPUT_ORIGIN = "source"
 VERIFICATION_OUTPUT_FIELDS = frozenset(
     {"candidate_id", "verdict", "fresh_context", "reviewer_id", "checked_artifacts", "issues"}
 )
@@ -248,15 +250,22 @@ def _validate_sha256(value: object, context: str) -> str:
 def _validate_input_reference(reference: object, context: str, *, labelled: bool) -> dict:
     if not isinstance(reference, dict):
         raise EvolutionError(f"{context} must be an object")
-    expected = {"path", "sha256"} | ({"label"} if labelled else set())
+    expected = {"kind", "origin", "path", "sha256", "created_at_utc"} | (
+        {"label"} if labelled else set()
+    )
     if set(reference) != expected:
         raise EvolutionError(f"{context} has an invalid field set")
+    if reference.get("kind") not in SOURCE_INPUT_KINDS:
+        raise EvolutionError(f"{context}.kind must be a registered source kind")
+    if reference.get("origin") != SOURCE_INPUT_ORIGIN:
+        raise EvolutionError(f"{context}.origin must be source, never a role output")
     if labelled:
         label = reference["label"]
         if label not in {"incumbent", "challenger"}:
             raise EvolutionError(f"{context}.label must be incumbent or challenger")
     _validate_relative_artifact_path(reference["path"], context)
     _validate_sha256(reference["sha256"], context)
+    _normalize_utc(reference["created_at_utc"])
     return reference
 
 
@@ -286,6 +295,7 @@ def validate_provenance_manifest(manifest: dict) -> None:
     if not isinstance(artifacts, list) or len(artifacts) != len(PROVENANCE_ROLES):
         raise EvolutionError("manifest.artifacts must register exactly three role artifacts")
     by_role: dict[str, dict] = {}
+    artifact_times: dict[str, str] = {}
     worker_ids: set[str] = set()
     output_paths: set[str] = set()
     manifest_time = _normalize_utc(manifest["created_at_utc"])
@@ -304,8 +314,8 @@ def validate_provenance_manifest(manifest: dict) -> None:
             raise EvolutionError("manifest output_path values must be unique")
         _validate_sha256(artifact.get("sha256"), context)
         artifact_time = _normalize_utc(artifact.get("created_at_utc"))
-        if artifact_time < manifest_time:
-            raise EvolutionError(f"{context}.created_at_utc predates the run manifest")
+        if artifact_time <= manifest_time:
+            raise EvolutionError(f"{context}.created_at_utc must be after the run manifest")
         input_artifacts = artifact.get("input_artifacts")
         if not isinstance(input_artifacts, list) or not input_artifacts:
             raise EvolutionError(f"{context}.input_artifacts must be a non-empty list")
@@ -314,6 +324,8 @@ def validate_provenance_manifest(manifest: dict) -> None:
             _validate_input_reference(
                 reference, f"{context}.input_artifacts[{input_index}]", labelled=labelled
             )
+            if _normalize_utc(reference["created_at_utc"]) >= artifact_time:
+                raise EvolutionError(f"{context} must be after each declared input artifact")
         status = artifact.get("terminal_status")
         allowed_statuses = {
             "proposer": {"succeeded", "failed", "rejected", "stale"},
@@ -323,10 +335,15 @@ def validate_provenance_manifest(manifest: dict) -> None:
         if status not in allowed_statuses:
             raise EvolutionError(f"{context}.terminal_status is invalid for {role}")
         by_role[role] = artifact
+        artifact_times[role] = artifact_time
         worker_ids.add(worker_id)
         output_paths.add(output_path)
     if set(by_role) != PROVENANCE_ROLES:
         raise EvolutionError("manifest must register proposer, verifier, and comparator")
+    proposer_time = artifact_times["proposer"]
+    for role in ("verifier", "comparator"):
+        if artifact_times[role] <= proposer_time:
+            raise EvolutionError(f"{role} output must be strictly after proposer output")
     proposer_output = by_role["proposer"]["output_path"]
     if any(
         reference["path"] == proposer_output
@@ -437,11 +454,21 @@ class EvolutionStore:
         _validate_relative_artifact_path(relative_path, "artifact")
         try:
             self.root.mkdir(parents=True, exist_ok=True)
+            if self.root.is_symlink():
+                raise EvolutionError("evolution artifact root must not be a symlink")
             root = self.root.resolve(strict=True)
         except OSError as error:
             raise EvolutionError(f"cannot access evolution artifact root: {error}") from error
-        path = self.root / relative_path
-        if path.is_symlink() or not path.is_file():
+        path = root
+        for component in Path(relative_path).parts:
+            path = path / component
+            try:
+                mode = os.lstat(path).st_mode
+            except OSError as error:
+                raise EvolutionError(f"registered artifact is missing or unsafe: {relative_path}") from error
+            if stat.S_ISLNK(mode):
+                raise EvolutionError(f"registered artifact contains a symlink: {relative_path}")
+        if not stat.S_ISREG(os.lstat(path).st_mode):
             raise EvolutionError(f"registered artifact is missing or unsafe: {relative_path}")
         try:
             resolved = path.resolve(strict=True)
@@ -449,6 +476,14 @@ class EvolutionStore:
         except (OSError, ValueError) as error:
             raise EvolutionError(f"registered artifact escapes evolution root: {relative_path}") from error
         return resolved
+
+    def _artifact_identity(self, reference: dict) -> tuple[int, int]:
+        path = self._artifact_path(reference["path"])
+        try:
+            metadata = path.stat()
+        except OSError as error:
+            raise EvolutionError(f"cannot stat registered artifact {reference['path']}: {error}") from error
+        return metadata.st_dev, metadata.st_ino
 
     def _read_registered_reference(self, reference: dict, context: str) -> dict:
         path = self._artifact_path(reference["path"])
@@ -470,6 +505,7 @@ class EvolutionStore:
     def _validate_registered_artifacts(self, manifest: dict) -> dict[str, dict]:
         """Verify sealed outputs, their declared inputs, and role-specific schemas."""
         payloads: dict[str, dict] = {}
+        registrations = {artifact["role"]: artifact for artifact in manifest["artifacts"]}
         for artifact in manifest["artifacts"]:
             role = artifact["role"]
             for index, reference in enumerate(artifact["input_artifacts"], start=1):
@@ -498,6 +534,32 @@ class EvolutionStore:
                 if payload.get("blind") is not True:
                     raise EvolutionError("comparator output is not blind")
             payloads[role] = payload
+
+        proposer = registrations["proposer"]
+        verifier = registrations["verifier"]
+        comparator = registrations["comparator"]
+        if payloads["verifier"].get("reviewer_id") != verifier["worker_id"]:
+            raise EvolutionError("verifier reviewer_id does not match registered verifier worker")
+        if verifier["worker_id"] in {proposer["worker_id"], comparator["worker_id"]}:
+            raise EvolutionError("verifier worker must be separated from proposer and comparator")
+
+        proposer_reference = {"path": proposer["output_path"], "sha256": proposer["sha256"]}
+        proposer_identity = self._artifact_identity(proposer_reference)
+        for index, reference in enumerate(verifier["input_artifacts"], start=1):
+            if reference["sha256"] == proposer["sha256"]:
+                raise EvolutionError("verifier input duplicates proposer output content")
+            if self._artifact_identity(reference) == proposer_identity:
+                raise EvolutionError("verifier input aliases proposer output inode")
+            if reference["origin"] != SOURCE_INPUT_ORIGIN:
+                raise EvolutionError("verifier input origin must not be a role output")
+        checked_artifacts = payloads["verifier"].get("checked_artifacts")
+        if not isinstance(checked_artifacts, list) or not all(
+            isinstance(path, str) for path in checked_artifacts
+        ):
+            raise EvolutionError("verifier checked_artifacts must be a list of paths")
+        expected_paths = sorted(reference["path"] for reference in verifier["input_artifacts"])
+        if len(checked_artifacts) != len(set(checked_artifacts)) or sorted(checked_artifacts) != expected_paths:
+            raise EvolutionError("verifier checked_artifacts do not equal registered inputs")
         return payloads
 
     def _provenance_manifest_for(self, candidate_id: str) -> dict | None:

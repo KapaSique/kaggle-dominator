@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -64,7 +65,7 @@ def passing_verifier(candidate_id: str = "cand-1") -> dict:
         "verdict": "PASS",
         "fresh_context": True,
         "reviewer_id": "verifier-1",
-        "checked_artifacts": ["evidence.json", "oof.parquet"],
+        "checked_artifacts": [f"artifacts/run-{candidate_id}/raw-evidence.json"],
         "issues": [],
     }
 
@@ -104,7 +105,9 @@ def provenance_manifest(
     evidence = evidence or valid_evidence() | {"candidate_id": candidate_id}
     run_id = f"run-{candidate_id}"
     evidence_path, evidence_hash = write_json_artifact(
-        root, f"artifacts/{run_id}/raw-evidence.json", evidence
+        root,
+        f"artifacts/{run_id}/raw-evidence.json",
+        {"source_type": "raw_evidence", "candidate_token": candidate_id, "dataset": "dataset-v1"},
     )
     incumbent_path, incumbent_hash = write_json_artifact(
         root, f"artifacts/{run_id}/blind-incumbent.json", {"score": 0.951}
@@ -122,9 +125,16 @@ def provenance_manifest(
         root, f"artifacts/{run_id}/comparator.json", comparator
     )
     comparator_inputs = [
-        {"label": "incumbent", "path": incumbent_path, "sha256": incumbent_hash},
-        {"label": "challenger", "path": challenger_path, "sha256": challenger_hash},
+        {"label": "incumbent", "kind": "artifact_pointer", "origin": "source", "path": incumbent_path, "sha256": incumbent_hash, "created_at_utc": "2026-07-17T00:01:00Z"},
+        {"label": "challenger", "kind": "artifact_pointer", "origin": "source", "path": challenger_path, "sha256": challenger_hash, "created_at_utc": "2026-07-17T00:01:00Z"},
     ]
+    source_reference = {
+        "kind": "raw_evidence",
+        "origin": "source",
+        "path": evidence_path,
+        "sha256": evidence_hash,
+        "created_at_utc": "2026-07-17T00:01:00Z",
+    }
     return {
         "run_id": run_id,
         "candidate_id": candidate_id,
@@ -135,25 +145,25 @@ def provenance_manifest(
                 "worker_id": "proposer-1",
                 "output_path": proposer_path,
                 "sha256": proposer_hash,
-                "created_at_utc": "2026-07-17T00:00:00Z",
+                "created_at_utc": "2026-07-17T00:02:00Z",
                 "terminal_status": evidence["status"],
-                "input_artifacts": [{"path": evidence_path, "sha256": evidence_hash}],
+                "input_artifacts": [source_reference],
             },
             {
                 "role": "verifier",
                 "worker_id": "verifier-1",
                 "output_path": verifier_path,
                 "sha256": verifier_hash,
-                "created_at_utc": "2026-07-17T00:01:00Z",
+                "created_at_utc": "2026-07-17T00:03:00Z",
                 "terminal_status": "PASS",
-                "input_artifacts": [{"path": evidence_path, "sha256": evidence_hash}],
+                "input_artifacts": [source_reference],
             },
             {
                 "role": "comparator",
                 "worker_id": "comparator-1",
                 "output_path": comparator_path,
                 "sha256": comparator_hash,
-                "created_at_utc": "2026-07-17T00:02:00Z",
+                "created_at_utc": "2026-07-17T00:04:00Z",
                 "terminal_status": "challenger",
                 "input_artifacts": comparator_inputs,
             },
@@ -359,7 +369,7 @@ class EvolutionProvenanceTests(unittest.TestCase):
         manifest = provenance_manifest(self.state_dir)
         proposer = manifest["artifacts"][0]
         manifest["artifacts"][1]["input_artifacts"] = [
-            {"path": proposer["output_path"], "sha256": proposer["sha256"]}
+            {"kind": "raw_evidence", "origin": "source", "path": proposer["output_path"], "sha256": proposer["sha256"], "created_at_utc": "2026-07-17T00:01:00Z"}
         ]
 
         with self.assertRaisesRegex(EvolutionError, "verifier.*proposer"):
@@ -421,6 +431,85 @@ class EvolutionProvenanceTests(unittest.TestCase):
                 manifest["comparator_package"] = package
                 with self.assertRaises(EvolutionError):
                     self.store.save_manifest(manifest)
+
+    def test_gate_rejects_reviewer_id_that_is_not_the_registered_worker(self) -> None:
+        verifier = passing_verifier()
+        verifier["reviewer_id"] = "proposer-1"
+        manifest = provenance_manifest(self.state_dir, verifier=verifier)
+        with self.assertRaisesRegex(EvolutionError, "reviewer_id"):
+            self.store.save_manifest(manifest)
+
+    def test_manifest_rejects_copied_or_hardlinked_proposer_output_as_verifier_input(self) -> None:
+        for copy_kind in ("copy", "hardlink"):
+            with self.subTest(copy_kind=copy_kind):
+                manifest = provenance_manifest(self.state_dir)
+                proposer = manifest["artifacts"][0]
+                alias_path = f"artifacts/{manifest['run_id']}/proposer-alias-{copy_kind}.json"
+                source = self.state_dir / proposer["output_path"]
+                destination = self.state_dir / alias_path
+                if copy_kind == "copy":
+                    destination.write_bytes(source.read_bytes())
+                else:
+                    os.link(source, destination)
+                manifest["artifacts"][1]["input_artifacts"] = [
+                    {"kind": "raw_evidence", "origin": "source", "path": alias_path, "sha256": proposer["sha256"], "created_at_utc": "2026-07-17T00:01:00Z"}
+                ]
+
+                with self.assertRaises(EvolutionError):
+                    self.store.save_manifest(manifest)
+
+    def test_manifest_rejects_untyped_verifier_input_reference(self) -> None:
+        manifest = provenance_manifest(self.state_dir)
+        del manifest["artifacts"][1]["input_artifacts"][0]["kind"]
+
+        with self.assertRaisesRegex(EvolutionError, "field set|kind|origin"):
+            self.store.save_manifest(manifest)
+
+    def test_gate_rejects_checked_artifacts_that_do_not_equal_registered_inputs(self) -> None:
+        verifier = passing_verifier()
+        verifier["checked_artifacts"] = ["not-registered.json"]
+        manifest = provenance_manifest(self.state_dir, verifier=verifier)
+        with self.assertRaisesRegex(EvolutionError, "checked_artifacts"):
+            self.store.save_manifest(manifest)
+
+    def test_manifest_rejects_symlinked_artifact_parent_directory(self) -> None:
+        manifest = provenance_manifest(self.state_dir)
+        artifact_dir = self.state_dir / "artifacts" / manifest["run_id"]
+        target_dir = self.state_dir / "artifact-target"
+        artifact_dir.rename(target_dir)
+        artifact_dir.symlink_to(target_dir, target_is_directory=True)
+
+        with self.assertRaisesRegex(EvolutionError, "unsafe|symlink"):
+            self.store.save_manifest(manifest)
+
+    def test_manifest_rejects_final_symlink_and_path_escape(self) -> None:
+        manifest = provenance_manifest(self.state_dir)
+        verifier_path = self.state_dir / manifest["artifacts"][1]["output_path"]
+        target = verifier_path.with_name("verifier-target.json")
+        verifier_path.rename(target)
+        verifier_path.symlink_to(target)
+        with self.assertRaisesRegex(EvolutionError, "unsafe|symlink"):
+            self.store.save_manifest(manifest)
+
+        escaped = provenance_manifest(self.state_dir, candidate_id="cand-escape")
+        escaped["artifacts"][0]["output_path"] = "artifacts/../escape.json"
+        with self.assertRaisesRegex(EvolutionError, "safe artifacts-relative"):
+            self.store.save_manifest(escaped)
+
+    def test_manifest_rejects_equal_or_out_of_order_role_timestamps(self) -> None:
+        for index, timestamp in ((0, "2026-07-17T00:00:00Z"), (1, "2026-07-17T00:02:00Z")):
+            with self.subTest(index=index):
+                manifest = provenance_manifest(self.state_dir)
+                manifest["artifacts"][index]["created_at_utc"] = timestamp
+                with self.assertRaises(EvolutionError):
+                    self.store.save_manifest(manifest)
+
+    def test_manifest_rejects_input_timestamp_equal_to_verifier_output(self) -> None:
+        manifest = provenance_manifest(self.state_dir)
+        manifest["artifacts"][1]["input_artifacts"][0]["created_at_utc"] = "2026-07-17T00:03:00Z"
+
+        with self.assertRaisesRegex(EvolutionError, "after each declared input"):
+            self.store.save_manifest(manifest)
 
 
 class EvolutionPromotionTests(unittest.TestCase):

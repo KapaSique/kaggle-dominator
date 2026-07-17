@@ -20,8 +20,8 @@ Write one immutable JSON output to the unique orchestrator-provided path
 `<workspace>/.dominator/evolution/artifacts/<run-id>/comparator-<worker-id>.json`.
 Never write to a shared mutable output path. `winner` is the terminal status,
 the compared artifact paths are supplied in the blind package, and the run
-sealed provenance manifest supplies the UTC timestamps and input artifact
-hashes. Emit exactly this machine-readable JSON schema:
+sealed provenance manifest supplies the UTC timestamps and typed, source-bound
+input artifact hashes. Emit exactly this machine-readable JSON schema:
 
 ```json
 {

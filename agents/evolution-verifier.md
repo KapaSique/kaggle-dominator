@@ -18,7 +18,10 @@ Write one immutable JSON output to the unique orchestrator-provided path
 Never write to a shared mutable output path. `verdict` is the terminal status,
 `checked_artifacts` are artifact paths, and the sealed provenance manifest
 supplies UTC timestamps, immutable hashes, distinct role+worker identities, and
-declared input artifact hashes. Emit exactly this machine-readable JSON schema:
+typed source-bound input artifact hashes. `reviewer_id` must exactly equal the
+registered verifier worker ID. `checked_artifacts`, after path normalization,
+must exactly equal the registered verifier input paths: no missing, extra, or
+unregistered claims. Emit exactly this machine-readable JSON schema:
 
 ```json
 {

@@ -35,16 +35,28 @@ Before gate or promotion, the deterministic engine saves exactly one immutable
 manifest for the opaque stable candidate token. It registers a unique
 role+worker identity and output path for the proposer, verifier, and comparator;
 each completed output and declared input artifact must have a SHA-256 and UTC
-timestamp. The workers and output paths are pairwise distinct. The verifier and
-comparator payload supplied to the gate must byte-match their registered,
-non-symlinked JSON outputs. Missing, changed, stale, shared, or self-produced
-artifacts reject the candidate.
+timestamp. The workers and output paths are pairwise distinct; `reviewer_id`
+must equal the verifier worker ID and therefore differ from proposer and
+comparator workers. Every artifact path component must be non-symlinked. The
+verifier and comparator payload supplied to the gate must byte-match their
+registered JSON outputs. Missing, changed, stale, shared, aliased, or
+self-produced artifacts reject the candidate.
+
+Verifier inputs are separately sealed source artifacts with `kind` one of
+`raw_evidence`, `artifact_pointer`, or `diff_package`, origin `source`, a
+SHA-256, and a UTC timestamp. Role outputs and byte-identical or inode-alias
+copies of the proposer output are never valid verifier inputs. The proposer
+output must be after the manifest; verifier and comparator outputs must be
+strictly after the proposer and every declared input. The verifier's
+`checked_artifacts` must normalize exactly to its registered input paths.
 
 The comparator gets identity-free packages with only `incumbent` and
 `challenger` labels plus the opaque stable candidate token. It never receives a
 model, author, proposer, or requested winner identity, and there is no A/B
 mapping adapter. The engine verifies the sealed package hashes and rejects
 identity-leakage fields before accepting the exact comparator output schema.
+It cannot prove that arbitrary free-text values contain no identity, so upstream
+redaction and opaque-token generation remain an orchestration policy.
 
 ```json
 {
@@ -57,16 +69,16 @@ identity-leakage fields before accepting the exact comparator output schema.
       "worker_id": "proposer-1",
       "output_path": "artifacts/run-cand-1/proposer.json",
       "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      "created_at_utc": "2026-07-17T00:00:00Z",
+      "created_at_utc": "2026-07-17T00:02:00Z",
       "terminal_status": "succeeded",
-      "input_artifacts": [{"path": "artifacts/run-cand-1/raw-evidence.json", "sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"}]
+      "input_artifacts": [{"kind": "raw_evidence", "origin": "source", "path": "artifacts/run-cand-1/raw-evidence.json", "sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789", "created_at_utc": "2026-07-17T00:01:00Z"}]
     }
   ],
   "comparator_package": {
     "candidate_token": "cand-1",
     "inputs": [
-      {"label": "incumbent", "path": "artifacts/run-cand-1/blind-incumbent.json", "sha256": "1111111111111111111111111111111111111111111111111111111111111111"},
-      {"label": "challenger", "path": "artifacts/run-cand-1/blind-challenger.json", "sha256": "2222222222222222222222222222222222222222222222222222222222222222"}
+      {"label": "incumbent", "kind": "artifact_pointer", "origin": "source", "path": "artifacts/run-cand-1/blind-incumbent.json", "sha256": "1111111111111111111111111111111111111111111111111111111111111111", "created_at_utc": "2026-07-17T00:01:00Z"},
+      {"label": "challenger", "kind": "artifact_pointer", "origin": "source", "path": "artifacts/run-cand-1/blind-challenger.json", "sha256": "2222222222222222222222222222222222222222222222222222222222222222", "created_at_utc": "2026-07-17T00:01:00Z"}
     ]
   }
 }
