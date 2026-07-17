@@ -259,24 +259,22 @@ class EvolutionStore:
 
     def record_evidence(self, evidence: dict) -> dict:
         """Record evidence once, followed by its OBSERVED and EVALUATED events."""
-        candidate_id = evidence.get("candidate_id") if isinstance(evidence, dict) else None
-        if isinstance(candidate_id, str):
-            for existing in read_jsonl(self._evidence_path):
-                if existing.get("candidate_id") == candidate_id:
-                    immutable_evidence = {
-                        key: value for key, value in existing.items() if key != "state"
-                    }
-                    validate_evidence(immutable_evidence)
-                    if existing.get("state") != "EVALUATED":
-                        raise EvolutionError(
-                            f"stored evidence for {candidate_id!r} has an invalid state"
-                        )
-                    self._repair_evaluated_events(candidate_id)
-                    return existing
-
         validate_evidence(evidence)
         normalized = _normalize_timestamps(evidence)
         candidate_id = normalized["candidate_id"]
+        for existing in read_jsonl(self._evidence_path):
+            if existing.get("candidate_id") == candidate_id:
+                immutable_evidence = {
+                    key: value for key, value in existing.items() if key != "state"
+                }
+                validate_evidence(immutable_evidence)
+                if existing.get("state") != "EVALUATED":
+                    raise EvolutionError(
+                        f"stored evidence for {candidate_id!r} has an invalid state"
+                    )
+                self._repair_evaluated_events(candidate_id)
+                return existing
+
         record = {**normalized, "state": "EVALUATED"}
         append_jsonl(self._evidence_path, record)
         self._repair_evaluated_events(candidate_id)

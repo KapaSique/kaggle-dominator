@@ -85,6 +85,22 @@ class EvolutionStoreTests(unittest.TestCase):
         self.assertEqual(len(read_jsonl(self.state_dir / "evidence.jsonl")), 1)
         self.assertEqual(len(read_jsonl(self.state_dir / "ledger.jsonl")), 2)
 
+    def test_malformed_duplicate_is_rejected_without_mutating_ledgers(self) -> None:
+        self.store.record_evidence(valid_evidence())
+        evidence_path = self.state_dir / "evidence.jsonl"
+        ledger_path = self.state_dir / "ledger.jsonl"
+        evidence_before = evidence_path.read_bytes()
+        ledger_before = ledger_path.read_bytes()
+        wrong_type = valid_evidence()
+        wrong_type["direction"] = {"unexpected": "higher"}
+
+        for malformed in ({"candidate_id": "cand-1"}, wrong_type):
+            with self.subTest(malformed=malformed):
+                with self.assertRaises(EvolutionError):
+                    self.store.record_evidence(malformed)
+                self.assertEqual(evidence_path.read_bytes(), evidence_before)
+                self.assertEqual(ledger_path.read_bytes(), ledger_before)
+
     def test_list_direction_raises_evolution_error(self) -> None:
         evidence = valid_evidence()
         evidence["direction"] = ["higher"]
