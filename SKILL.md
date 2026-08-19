@@ -33,7 +33,10 @@ deadlines, and active-front choices in the workspace campaign record—not here.
 2. **Confirm the game.** Verify metric direction from authoritative docs and the
    leaderboard; inspect `sample_submission`; confirm the actual deadline, daily
    limit, runtime constraints, external-data rules, and that submissions are enabled
-   before spending a session.
+   before spending a session. For any campaign whose goal is a medal, also confirm
+   `awards_points` is true and that `new_entrant_deadline` has not passed — a
+   top-percentile finish in a non-medal competition earns nothing. See
+   `references/front-selection.md`.
 3. **Preserve `BEST_KNOWN`.** Record its artifact identity/hash, exact real score,
    timestamp, provenance, and reproducible recipe. A candidate never silently
    replaces it. On a drifting live ladder, the agent artifact is the champion;
@@ -121,6 +124,9 @@ state: ACTIVE | MONITOR_ONLY | PAUSED | CLOSED
 format: tabular | deep_learning | simulation | code | judged
 metric: <name and direction>
 deadline_utc: <timestamp>
+awards_points: true | false | unknown
+entry_closes_utc: <new_entrant_deadline or none>
+teams_now: <n> and medal thresholds derived from it
 submissions_enabled: true | false | unknown
 daily_limit: <n or unknown>
 remaining_today: <n or unknown>
@@ -213,8 +219,12 @@ Open only the references needed for the current bottleneck:
 
 | Type or task | Read |
 |---|---|
+| Choosing which competition to enter at all | `references/front-selection.md` |
 | Portfolio focus, quotas, multiple fronts | `references/campaign-control.md` |
 | Cross-domain winning process | `references/grandmaster-playbook.md` |
+| Named winning techniques for your competition type | `references/gm-methods.md` |
+| Principles that hold across types — and where they INVERT | `references/doctrine-and-antipatterns.md` |
+| How the named grandmasters operate (person-level craft) | `references/gm-profiles.md` |
 | Account-specific measured history | `references/scorecard.md` |
 | Tabular classification/regression | `references/tabular.md` |
 | Images, text, audio, signals | `references/deep-learning.md` |

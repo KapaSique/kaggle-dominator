@@ -12,7 +12,7 @@ This is the account's REAL practice history — every competition actually worke
 |---|---|---|---|
 | playground-series-s6e5 | Tabular | **103/3023 = top 3.41%** (best % on account) | reproduce best public single + OOF diversity |
 | stellar-class-s6e6 | Tabular | **206/2817 = top 7.31%** (0.97244) | reproduce fresh ridge-flip public single (+195 places, one I/O move) |
-| pokemon-tcg-ai-battle | Sim ladder | ~1011/3942 = top 25.7% (real 1062.2) | reproduce public agent (makthanithin) beat own hand-build by +289 |
+| pokemon-tcg-ai-battle | Sim ladder | **1790/6810 = top 26.3%** (2026-08-19; the 1062.2 peak was a small-sample artefact that settled to 674-770) | reproduce public agent beat own hand-build by +289 — but two later self-built uploads **displaced** it and cost the rank |
 | neurogolf-2026 | Code comp | BEST 7129.07 LB (reproduce chain +606 dominant) | reproduce newest AUDITED public base, overlay own true-rule wins |
 | jed-agent-security | Red-team code | 51.75 public (~290/1288); dense candidate ~58 ready | reproduce pilkwang dense; BUT public ceiling < private prize |
 | rsna-knee-abnormality-detection | DL code comp, shared public weights | **0.920 public, 105/1918 = top 5.5% — MEDAL-ELIGIBLE, best such on the account** | adopt the freshest public frontier, then re-apply one own measured delta on top of each new base |
@@ -45,6 +45,25 @@ This is the account's REAL practice history — every competition actually worke
 - **Eval proxy was systematically BIASED, not just noisy.** The GGUF eval-harness showed 16-42% tool-compliance where the real comp gives ~100% (guide24 = 51.75 = ~570 findings/570 cand). A proxy can be *directionally* wrong — the real comp submit is the only trustworthy compliance test.
 
 ### Simulation / agent ladder — one strong agent, reproduce still wins, the arena can mislead
+- **★ The rating peak is a sample-size artefact.** One artifact read **1062.2** days after
+  submission, **769.4** three weeks later, and **674.1** when resubmitted — 388 points of spread
+  with the code unchanged. Public confirmation: two uploads with the SAME SHA-256 sat at 2182.2 and
+  1210.1 because each got its own rating instance. Record `(rating, games_played, timestamp)` as one
+  unit; never resubmit chasing a remembered peak.
+- **★ A ladder submission DISPLACES rather than adds.** Only the last N submissions of a team keep
+  playing, so uploading two weak agents retires your strong one — exactly what put us at 1790/6810.
+  Fixed-test comps are the opposite (ranking uses your BEST), so the parallel-lineage habit from
+  rule 5 is actively harmful here. Ask what each submission evicts.
+- **★ Replay distillation is the ladder's "reproduce best public".** Leaders' code is hidden but
+  their episodes are public: download the top teams' games, keep the schedule that REPEATS across
+  opponents, distil it into a tape, gate paired-seat over untouched seeds. Public gates run 27-3,
+  35-5/20 seeds, 90-10/10 seeds. Match episodes to the submission carrying the displayed score — a
+  team's newest games are often from their weaker second agent.
+- **★ Why our arenas lied three times (mechanism found).** Engine math differs between releases, and
+  the version string can pass while `import` resolves an older copy earlier on `sys.path`. The fix is
+  a **behavioural fixture**: replay a recorded game and assert the outcome reproduces exactly. Also
+  rank with **Bradley-Terry** (what the competition uses), not raw winrate, and build opponents that
+  differ in exactly ONE subsystem so a win is attributable.
 - **pokemon-tcg**: reproduce public agent (makthanithin 1062.2) beat our own hand-built v3-adaptive (773.3) by +289. Even on a ladder, reproduce-best > hand-build.
 - **orbit-wars**: BC-cloning a heuristic teacher reaches teacher-strength and STOPS (clone ≈ teacher − imitation loss); to beat a plateau you need search/RL ABOVE the teacher, not a faster copy. Final lock = v8-double asymmetric (floor + upside).
 - **maze-crawler**: (a) run a FRESH death-cause diagnostic before building a fix — the real killer (62% factory_ram) differed from the remembered bottleneck; (b) isolate ONE component of a failed bundle — `ceiling_buffer` alone = +7.1% though the v20 bundle lost.
@@ -82,3 +101,5 @@ This is the account's REAL practice history — every competition actually worke
 5. **Working the wrong board / wrong window** — JED private vs public; and simulation comps that had submissions DISABLED before the listed deadline. Verify the board and that submissions are OPEN before investing a session.
 6. **Testing screened candidates sequentially, best-first** — on RSNA the "backup" beat the primary three times, most sharply 0.920 vs 0.911 from the SAME author on the same day. When slots allow, submit independent lineages in parallel: ranking uses your BEST submission, so a loser costs a slot and never the position, and a kernel RUN costs no slot at all.
 7. **Trusting a name, a vote count, or a log line instead of the recorded number** — a bundle that looked like a +0.0076 blend partner carried `promotion_gate_passed: false` and 0.698 in its own receipt; a kernel log printed an alpha the code no longer used; Kaggle's file listing claimed 871 bytes for an 89 MB file. Open the receipt, read the constant in the code, verify size by downloading.
+8. **Submitting to a ladder without asking what it displaces** — two self-built agents (708.7, 706.4) evicted a stronger reproduced lineage and left us at 1790/6810 with gold at top 23. On rating ladders a submission is a REPLACEMENT, not an addition.
+9. **Opening a campaign without checking `awards_points`** — top 3.41% and top 7.31% finishes earned zero because both were Playground. Percentile is only progress when the competition awards medals; check the flag before the data.

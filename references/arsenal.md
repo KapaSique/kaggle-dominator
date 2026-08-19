@@ -53,6 +53,50 @@ When variants number in the dozens, memory fails — keep a log.
 - **Telegram Kaggle groups** — team formation, strategy discussion.
 - **NVIDIA KGMoN** — Grandmaster breakdowns on the NVIDIA Tech Blog.
 
+## Kaggle MCP server — recon tools the CLI does not expose
+
+When the official Kaggle MCP server is connected and authorized (`authorize`; it needs its own
+OAuth and will answer `Unauthenticated` until then — the CLI from `~/.kaggle/kaggle.json` is the
+fallback and covers most plumbing), it adds recon capabilities worth reaching for:
+
+**Front selection and metadata.** `get_competition` returns everything the selection gate needs in
+ONE call — `awards_points`, `new_entrant_deadline`, `enabled_date`, `team_count`,
+`max_daily_submissions`, `is_kernels_submissions_only`, `evaluation_metric`, `max_team_size`.
+`search_competitions` lists by category/deadline. This is faster and more complete than parsing CLI
+output; see `front-selection.md`.
+
+**Simulation/ladder recon — the highest-value block.** `list_submission_episodes`,
+`get_episode_replay`, and `get_episode_agent_logs` are how replay distillation is actually done:
+they give you the leaders' *behaviour* when their code is private. `list_team_public_submissions`
+lets you match an episode to the submission carrying a team's displayed score — without that match
+you sample their weaker second agent. See `simulation.md`.
+
+**Discussion and solution mining.** `list_forum_topics`, `get_forum_topic`, `list_topic_messages`,
+`list_competition_topics` pull writeups and frontier chatter programmatically instead of by hand.
+`search_notebooks` / `get_notebook_info` / `list_notebook_files` support the four-check notebook
+screen (learned-playbook rule 3) before spending an accelerator hour.
+
+**Hackathon/judged fronts.** `get_hackathon_overview`, `list_hackathon_tracks`,
+`list_hackathon_write_ups`, `download_hackathon_write_ups`, `get_writeup*` retrieve the rubric and
+past winning writeups — the rubric IS the metric in that format.
+
+**Kernels and submission plumbing.** `create_notebook_session`, `get_notebook_session_status`,
+`download_notebook_output`, `submit_to_competition`, `create_code_competition_submission`,
+`get_accelerator_quota`. Submission calls remain approval-gated regardless of transport.
+
+## Simulation engines
+
+**`kaggle-environments`** — the engine behind Kaggle's simulation competitions
+(`make("<env>")`, `env.run([...])`, replay rendering). **Pin the exact version and verify the pin
+behaviourally**: engine math changes between releases, and a version assertion can pass while
+`import` resolves an older copy earlier on `sys.path`. Details and the fixture pattern in
+`simulation.md`.
+
+**Official replay datasets.** Several simulation competitions publish a daily episode dataset
+(e.g. `kaggle/kaggriculture-episodes-index`) with a `manifest.csv` carrying each episode's mean
+ladder rating — letting you analyze the meta by rating band and track how fast it shifts. Look for
+one before building your own scraper.
+
 ## Infrastructure skill
 
 If a separate `kaggle` infrastructure skill is installed (e.g. the community shepsci skill: modules for kagglehub, the CLI, an MCP server, badge collection, competition reports), use it for the plumbing (download/submit/push/kernel-poll, hackathon-rubric retrieval), and use `kaggle-dominator` for the strategy and technique selection. This skill assumes `~/.kaggle/kaggle.json` (or `KAGGLE_API_TOKEN`) is configured.

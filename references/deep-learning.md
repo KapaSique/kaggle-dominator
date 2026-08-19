@@ -1,5 +1,7 @@
 # Deep Learning — CV / NLP / audio / signals
 
+> **Depth layer:** `gm-methods.md` sections *CV — classification*, *CV — segmentation & detection*, *Medical imaging*, *NLP*, *LLM-era*, *Audio & signal*; failure catalogue — `doctrine-and-antipatterns.md`.
+
 GPU training. The winner: **a strong public backbone + smart augmentation + TTA + pseudo-labeling + an ensemble of folds/architectures**. All on Kaggle GPU kernels (T4×2 / P100), nothing locally.
 
 ## Contents

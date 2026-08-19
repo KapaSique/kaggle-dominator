@@ -1,5 +1,7 @@
 # Code competitions and judge-scored hackathons
 
+> **Depth layer:** `gm-methods.md` section *Code competitions & efficiency tracks*; cross-domain principles — `doctrine-and-antipatterns.md`.
+
 Two formats with special submission rules. A code comp is scored by a metric on a hidden test via an inference notebook; a hackathon is scored by humans on a rubric, and there the writeup matters more than the model.
 
 ## Contents

@@ -1,5 +1,7 @@
 # Tabular — Playground and tabular competitions
 
+> **Depth layer:** named winning techniques with competition evidence — `gm-methods.md` sections *Tabular — classic* and *Tabular — modern*; cross-domain principles and failure catalogue — `doctrine-and-antipatterns.md`.
+
 Strong tabular results often come from **trustworthy out-of-fold predictions ×
 diversity × evidence-based blending**. Start with a few strong, genuinely different
 models; expand only while the next model earns score, stability, or complementary

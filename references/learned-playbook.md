@@ -210,3 +210,68 @@ Continuing to chase his parameter value would have spent slots on a plateau.
 
 **Scope/limits.** Requires at least three points to call a plateau, and the points
 must be real scores.
+
+---
+
+## 11. A ladder rating peak is a sample-size artefact, not a capability
+
+**Claim.** On rating-based ladders (TrueSkill/Elo/Bradley-Terry) an early reading is a
+high-variance estimate. Its **peak** is systematically inflated and does not survive more
+games, so a historical peak must never be used as an agent's strength — and cannot be
+recovered by resubmitting the same artifact.
+
+**Evidence (Pokemon TCG AI Battle, ladder, 6810 teams).** One artifact
+(`makthanithin` public reproduction) recorded **1062.2** shortly after submission on
+2026-06-21. The identical artifact resubmitted on 2026-07-10 scored **674.1**; an
+intermediate snapshot on 2026-07-11 read **769.4**. Three readings, one unchanged agent,
+a spread of **388 rating points** — the 1062.2 was a property of having played few games.
+Independent public confirmation on another ladder: two uploads with the **same SHA-256**
+`main.py` sat at 2182.2 and 1210.1 simultaneously (Kaggle created a separate rating
+instance per upload), and the lower one drifted to 1865.6 with no code change.
+
+**Scope/limits.** Applies to any live-rating ladder, not to fixed-test leaderboards. Record
+`(rating, games_played, timestamp)` as one unit and compare agents only at comparable game
+counts. The earlier account lesson "ladder drift ±200" understated it in the wrong
+direction: drift is not merely noisy, the **early peak is biased upward**.
+
+---
+
+## 12. Before submitting to a ladder, ask what the submission DISPLACES
+
+**Claim.** Ladder platforms play only the most recent N submissions of a team. A new
+submission therefore does not merely add a candidate — it **evicts** one. A candidate that
+is not clearly better than what it displaces has negative expected value regardless of how
+interesting it is.
+
+**Evidence (Pokemon TCG).** Two self-built agents submitted on 2026-08-11 (`BattleCore-A`
+708.7, `Meta-A` 706.4) became the team's active pair, retiring the stronger reproduced
+lineage. Team rank on 2026-08-19: **1790 / 6810**, with gold at top 23. The account's own
+memory had flagged this as "possibly just not selected" five weeks earlier; the mechanism
+turned out to be displacement by newer, weaker uploads.
+
+**Scope/limits.** Ladder/simulation formats only — on fixed-test leaderboards ranking uses
+your BEST submission, which is why parallel lineage testing is nearly free there (rule 5).
+The two formats have **opposite** submission economics; do not carry the habit across.
+Verify N and the selection rule per competition, and re-read standings after submitting to
+confirm the intended artifact is live.
+
+---
+
+## 13. Check `awards_points` before opening a campaign, not after
+
+**Claim.** Percentile performance is worthless as medal progress unless the competition
+awards medals. This gate belongs at front-selection time, ahead of data, metric, and
+notebooks.
+
+**Evidence (this account, cross-front).** The two best percentile results ever recorded —
+**103/3023 = top 3.41%** (`playground-series-s6e5`) and **206/2817 = top 7.31%**
+(`stellar-class-s6e6`) — are both Playground with `awards_points=false` and earned nothing.
+The account holds **zero medals** while executing at top-3.41% level. Meanwhile a
+medal-bearing front reached **106/1918 = top 5.5%** (RSNA Knee), which is worth strictly
+more than either despite the weaker percentile.
+
+**Scope/limits.** The flag is per competition slug, not per event: a Featured event can pair
+a medal-bearing ladder with a writeup track that awards none. Playground remains valid for
+method calibration — label it that way in the campaign record so its percentiles are never
+reported as medal progress. Full thresholds and the scan command are in
+`references/front-selection.md`.
