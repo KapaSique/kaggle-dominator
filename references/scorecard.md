@@ -15,8 +15,11 @@ This is the account's REAL practice history — every competition actually worke
 | pokemon-tcg-ai-battle | Sim ladder | ~1011/3942 = top 25.7% (real 1062.2) | reproduce public agent (makthanithin) beat own hand-build by +289 |
 | neurogolf-2026 | Code comp | BEST 7129.07 LB (reproduce chain +606 dominant) | reproduce newest AUDITED public base, overlay own true-rule wins |
 | jed-agent-security | Red-team code | 51.75 public (~290/1288); dense candidate ~58 ready | reproduce pilkwang dense; BUT public ceiling < private prize |
+| rsna-knee-abnormality-detection | DL code comp, shared public weights | **0.920 public, 105/1918 = top 5.5% — MEDAL-ELIGIBLE, best such on the account** | adopt the freshest public frontier, then re-apply one own measured delta on top of each new base |
 
 **Pattern:** the top percentiles (3.41%, 7.31%) are TABULAR Playground, won almost entirely by reproduce-best-public + a little OOF diversity — the highest-ROI front for a solo autonomous practitioner. Simulation/red-team gave lower percentiles and hit ceilings (see below).
+
+**Read percentile together with medal eligibility.** The 3.41% and 7.31% rows are Playground (`awards_points=false`) and earned NOTHING. RSNA's top-5.5% is worth more than both because the competition awards medals. Check `awards_points` before ranking fronts by percentile — this scorecard's own yardstick is misleading without it.
 
 ---
 
@@ -52,6 +55,17 @@ This is the account's REAL practice history — every competition actually worke
 - **freuid-challenge**: simple `convnext_tiny` at 0.354 beat fullres/ensemble variants (0.02-0.15) — over-engineering a working DL base actively destroyed the score. OOD trap: private = unseen doc types + recaptured vs all-digital train → validate BLIND, don't overfit the train distribution.
 - **neural-debris-removal**: blind-validation comp (no clean labels) → calibrate any local surrogate against your real submit→LB points FIRST; a pseudo-clean proxy showed Spearman 0.000 (dead) — don't optimize against it.
 
+### DL on a SHARED public weights package — adoption speed is the whole game
+- **rsna-knee (0.899 → 0.920, rank 365 → 105 of 1918)**: hundreds of teams mount one public package, so the leaderboard is steps with dense clusters. Our own-ensemble work (retrained members, per-target combiners, an OOF matrix, a planned diffusion-feature extractor) returned **+0.001** while the bronze line moved **0.902 → 0.911 in three days**. Two adoptions of the fresh frontier then returned **+0.011 (195 ranks)** and **+0.005 (133 ranks)**. Watch public notebooks at the SAME cadence as your own runs.
+- **★ Carry one measured delta onto every base you adopt.** Reproducing the frontier exactly lands you mid-cluster with everyone else who did. `rank(pct=True)` → raw probability in the member combiner was +0.001 when first measured, and transferred INTACT onto four structurally different later bases (one moved rank 170 → 119). A finding that survives a pipeline change is a property of the metric.
+- **★ The public package has a CEILING.** 0.92x is where reproduction tops out; the top-13 at 0.940 train their own models. Silver was one more adoption away, gold needs a different SOLUTION CLASS. Do not plan a GPU budget as if these were the same task.
+- **Screen a notebook in four checks before spending a run** (each rejected a real candidate): empty strings in `dataset_sources` = private deps = unreproducible by anyone but the author; empty `kernel_sources` entries = the same for notebooks; last-run date (a strong author can sit on stale code); THEN author rank.
+- **★ Author rank is a filter, not an ordering.** It correctly rejected the newest 48-vote notebook (author below us). But a rank-294 author's notebook beat a rank-91 author's (0.915 vs 0.914), and two notebooks by the SAME author scored **0.920 vs 0.911** — authors do not publish what they submit. So run independent lineages in PARALLEL; three times the "backup" won. Ranking uses your BEST submission, so a weak candidate costs a slot, never the position — and a kernel RUN costs no slot at all.
+- **Leaderboard CSVs round to 3 decimals**, so apparent 96-team "ties" are display artefacts spanning ~95 real ranks. Inside such a cluster a sub-0.001 lever is exactly the right size, not cosmetic.
+- **A flat parameter sweep is a POSITIVE result** — it localises the cause. Three submissions gave 0.911/0.912/0.912; because that constant was measurably spent, the author's remaining +0.005 had to be in the code he had added that morning. Adopting it returned +0.002.
+- **Member count is not quality**: 20 members beat 24 by 0.009.
+- **Traps:** competitions can FORBID accelerators, quoted at submit time (`cannot use TPU`, `cannot use P100 GPUs`) — a mystery `CUDA error: no kernel image is available` was just a P100. The ~1 MB kernel-push limit counts non-executing markdown (dropping 27 cells took 1,013,322 → 898,117 bytes with the code SHA unchanged; re-minifying JSON made it *worse*).
+
 ### Judge-scored hackathon (no LB) — the rubric is the metric, the writeup is half the score
 - **triagegeist** (ED-triage, JUDGE-scored, no LB): flagship = "Second Look" safety-net framing; text-only features hit 100% acc = informative-missingness LEAK trap (a field's presence encodes the label) — catch it or the demo is a lie.
 - **capstone-agents-for-business** (ADK multi-agent BI, rubric 100pts): decompose the rubric into a weighted checklist; a Verifier agent is the differentiator; submit = writeup + repo + video, presentation ≈ half the score.
@@ -63,6 +77,8 @@ This is the account's REAL practice history — every competition actually worke
 
 1. **Over-engineering past the peak** — cost score in 6 of 8 audited comps (orbit, maze, freuid, s6e6-TabPFN, neurogolf cross-dump, JED-private). A simple working base + STOP beats a clever layer that degrades the metric.
 2. **Trusting a proxy that lied** — local arena (sim), pseudo-clean surrogate (debris, Spearman 0), GGUF eval-compliance (JED, 16-42% vs 100%). Calibrate the proxy against real points or don't ship on it.
-3. **Refining a stale base** — the public frontier moves in DAYS (neurogolf 6275→7128 in a week). Re-study the field every 1-2 days; one reproduce beat a whole hand-build cycle.
+3. **Refining a stale base** — the public frontier moves in DAYS (neurogolf 6275→7128 in a week; RSNA's bronze line 0.902→0.911 in three days while our own tuning earned +0.001). Re-study the field every 1-2 days; one reproduce beat a whole hand-build cycle. **Watch the frontier at the same cadence as your own experiments, not after them.**
 4. **Fabricated/remembered numbers** — pokemon carried invented ladder scores across sessions until a fresh `submissions --csv` corrected them. A number in memory is a CLAIM until the CSV confirms it.
 5. **Working the wrong board / wrong window** — JED private vs public; and simulation comps that had submissions DISABLED before the listed deadline. Verify the board and that submissions are OPEN before investing a session.
+6. **Testing screened candidates sequentially, best-first** — on RSNA the "backup" beat the primary three times, most sharply 0.920 vs 0.911 from the SAME author on the same day. When slots allow, submit independent lineages in parallel: ranking uses your BEST submission, so a loser costs a slot and never the position, and a kernel RUN costs no slot at all.
+7. **Trusting a name, a vote count, or a log line instead of the recorded number** — a bundle that looked like a +0.0076 blend partner carried `promotion_gate_passed: false` and 0.698 in its own receipt; a kernel log printed an alpha the code no longer used; Kaggle's file listing claimed 871 bytes for an 89 MB file. Open the receipt, read the constant in the code, verify size by downloading.

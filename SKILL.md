@@ -240,7 +240,14 @@ Stop and correct course when any appears:
   class or complementary signal;
 - starting a new competition while the declared `ACTIVE` campaign owns the budget;
 - claiming rank, score, completion, or reproducibility without fresh evidence;
-- allowing an upstream failed recon to leave downstream agents guessing facts.
+- allowing an upstream failed recon to leave downstream agents guessing facts;
+- grinding your own increments while the public frontier moves faster than your
+  gains — on a shared-package front, refresh the frontier at the same cadence as
+  your experiments, not after them;
+- testing screened candidates sequentially best-first when the daily limit allows
+  submitting independent lineages in parallel;
+- believing a title, a vote count, or a log line over the number recorded in the
+  artifact itself.
 
 ## Learning and self-improvement
 
